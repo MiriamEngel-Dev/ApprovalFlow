@@ -1,0 +1,43 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-approvalflow}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme}
+    expose:
+      - '5432'
+    ports:
+      - '5432:5432'
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER:-approvalflow}']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+
+  redis:
+    image: redis:7-alpine
+    expose:
+      - '6379'
+    ports:
+      - '6379:6379'
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # Real services + their Dapr sidecars are added here one at a time starting with
+  # submission-service (docs/IMPLEMENTATION-PLAN.md, Milestone 5). The Milestone 3 infra spike
+  # (a throwaway app + sidecar) proved the pattern below works and has been removed:
+  #   - one Dapr sidecar per service via `network_mode: "service:{app}"` (shared network
+  #     namespace — sidecar reaches the app at localhost:{app-port}, app reaches the sidecar at
+  #     localhost:3500)
+  #   - `dapr/components/*.yaml` mounted read-only into `/components`
+  #   - `dapr/secrets.json` (gitignored, copy of secrets.json.example) mounted at
+  #     /dapr/secrets.json — daprd treats a missing secrets file as fatal and refuses to start,
+  #     so this mount is required even before any service actually reads a secret.
+
+volumes:
+  postgres-data:
