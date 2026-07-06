@@ -15,6 +15,7 @@ services:
       retries: 10
     volumes:
       - postgres-data:/var/lib/postgresql/data
+      - ./postgres/init-databases.sql:/docker-entrypoint-initdb.d/init-databases.sql:ro
 
   redis:
     image: redis:7-alpine
@@ -28,16 +29,47 @@ services:
       timeout: 5s
       retries: 10
 
-  # Real services + their Dapr sidecars are added here one at a time starting with
-  # submission-service (docs/IMPLEMENTATION-PLAN.md, Milestone 5). The Milestone 3 infra spike
-  # (a throwaway app + sidecar) proved the pattern below works and has been removed:
-  #   - one Dapr sidecar per service via `network_mode: "service:{app}"` (shared network
-  #     namespace — sidecar reaches the app at localhost:{app-port}, app reaches the sidecar at
-  #     localhost:3500)
-  #   - `dapr/components/*.yaml` mounted read-only into `/components`
-  #   - `dapr/secrets.json` (gitignored, copy of secrets.json.example) mounted at
-  #     /dapr/secrets.json — daprd treats a missing secrets file as fatal and refuses to start,
-  #     so this mount is required even before any service actually reads a secret.
+  submission-service:
+    build:
+      context: .
+      dockerfile: services/submission-service/Dockerfile
+    ports:
+      - '3000:3000'
+      # 3500 (Dapr HTTP) published for direct verification during development; removed once
+      # nginx (Milestone 11) becomes the single external entry point (M6).
+      - '3500:3500'
+    environment:
+      APP_PORT: '3000'
+      DAPR_HTTP_PORT: '3500'
+      POSTGRES_HOST: postgres
+      POSTGRES_USER: ${POSTGRES_USER:-approvalflow}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme}
+      SUBMISSION_DB: submission_db
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  submission-service-dapr:
+    image: daprio/daprd:1.14.4
+    command:
+      - './daprd'
+      - '--app-id=submission-service'
+      - '--app-port=3000'
+      - '--dapr-http-port=3500'
+      - '--resources-path=/components'
+      - '--log-level=info'
+    network_mode: 'service:submission-service'
+    volumes:
+      - ./dapr/components:/components
+      - ./dapr/secrets.json:/dapr/secrets.json:ro
+    depends_on:
+      - submission-service
+
+  # Remaining services + their Dapr sidecars are added here one at a time: decision-service
+  # (Milestone 7), payment-service (Milestone 9), audit-service (Milestone 10), then nginx
+  # (Milestone 11) — same pattern as submission-service above.
 
 volumes:
   postgres-data:
