@@ -1,0 +1,18 @@
+openapi: 3.0.3
+info:
+  title: ApprovalFlow API
+  description: >
+    Invoice & Expense Approval Platform — single external entry point (nginx, port 8080).
+    Full endpoint documentation is filled in as each service is implemented
+    (see docs/IMPLEMENTATION-PLAN.md, Milestone 15).
+  version: 0.1.0
+servers:
+  - url: http://localhost:8080
+    description: Local docker compose
+paths: {}
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
