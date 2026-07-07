@@ -3,6 +3,8 @@ dist
 build
 coverage
 .claude
+# Drizzle-generated migration artifacts — not hand-authored, not tooling-formatted
+**/drizzle/
 
 # Hand-authored project docs — not subject to auto-formatting (predate the toolchain,
 # ADRs in particular are written by the author deliberately, not tooling-formatted)
