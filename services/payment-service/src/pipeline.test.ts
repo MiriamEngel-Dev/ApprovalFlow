@@ -1,6 +1,9 @@
 // Integration test against a real Postgres — requires `docker compose up -d postgres` running
 // locally first (connects to payment_db). The saga's concurrency/compensation guarantees are
 // inherently database behaviors (row-locking, CHECK constraints) that mocks can't stand in for.
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { eq, sql as rawSql } from 'drizzle-orm';
 import { beforeEach, describe, expect, it } from 'vitest';
@@ -10,6 +13,19 @@ import { runPaymentSaga, type SagaTrigger } from './pipeline.js';
 import { forceFailureFor } from './mock-provider.js';
 
 const DEPARTMENT = 'engineering-2026Q2';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const fixturesPath = path.resolve(__dirname, '../../../sample-invoices.json');
+const fixturesFile = JSON.parse(readFileSync(fixturesPath, 'utf-8')) as {
+  budgets: Record<string, number>;
+  fixtures: { id: string; department: string; total: number }[];
+};
+
+function getFixture(id: string) {
+  const fixture = fixturesFile.fixtures.find((f) => f.id === id);
+  if (!fixture) throw new Error(`Fixture ${id} not found in sample-invoices.json`);
+  return fixture;
+}
 
 async function seedBudget(total: number): Promise<void> {
   await db.insert(departmentBudgets).values({ department: DEPARTMENT, total: total.toFixed(2) });
@@ -115,14 +131,19 @@ describe('runPaymentSaga — event dedup (M10)', () => {
 });
 
 describe('runPaymentSaga — concurrency pair INV-1014A/B (M9, ADR-003)', () => {
-  it('reserves exactly one of two concurrent $600 requests against a $1,000 budget, never overspending', async () => {
-    await seedBudget(1000);
-    const submissionA = randomUUID();
-    const submissionB = randomUUID();
+  it('reserves exactly one of the two shipped fixtures against their shared budget, never overspending', async () => {
+    const fixtureA = getFixture('INV-1014A');
+    const fixtureB = getFixture('INV-1014B');
+    expect(fixtureA.department).toBe(fixtureB.department);
+    const department = fixtureA.department;
+    const budgetTotal = fixturesFile.budgets[department];
+    if (budgetTotal === undefined) throw new Error(`No budget seeded for ${department}`);
+
+    await db.insert(departmentBudgets).values({ department, total: budgetTotal.toFixed(2) });
 
     const [resultA, resultB] = await Promise.all([
-      runPaymentSaga(trigger({ submissionId: submissionA, amount: 600 })),
-      runPaymentSaga(trigger({ submissionId: submissionB, amount: 600 })),
+      runPaymentSaga(trigger({ department, amount: fixtureA.total })),
+      runPaymentSaga(trigger({ department, amount: fixtureB.total })),
     ]);
 
     expect([resultA.status, resultB.status]).toEqual(['processed', 'processed']);
@@ -132,13 +153,15 @@ describe('runPaymentSaga — concurrency pair INV-1014A/B (M9, ADR-003)', () => 
       .from(reservations)
       .where(eq(reservations.status, 'confirmed'));
     expect(confirmedReservations).toHaveLength(1);
+    expect(Number(confirmedReservations[0]?.amount)).toBe(fixtureA.total);
 
     const [budget] = await db
       .select()
       .from(departmentBudgets)
-      .where(eq(departmentBudgets.department, DEPARTMENT));
+      .where(eq(departmentBudgets.department, department));
     expect(Number(budget?.reserved)).toBe(0);
-    expect(Number(budget?.spent)).toBeLessThanOrEqual(1000);
+    expect(Number(budget?.spent)).toBe(fixtureA.total);
+    expect(Number(budget?.spent)).toBeLessThanOrEqual(budgetTotal);
 
     const failedOutbox = (await db.select().from(outbox)).filter(
       (r) => r.topic === 'PaymentFailed',

@@ -2,7 +2,7 @@ import Fastify from 'fastify';
 import { correlationIdPlugin, createLogger } from '@approvalflow/shared';
 import { registerHealthRoutes } from './routes/health.js';
 import { registerInternalRoutes } from './routes/internal.js';
-import { registerEventRoutes } from './routes/events.js';
+import { registerSubscribers } from './subscribers/index.js';
 import { startPaymentOutboxRelay } from './outbox-relay.js';
 import { startStuckReservationScanner } from './scanner/stuck-reservation-scanner.js';
 import { seedBudgetsIfEmpty } from './seed.js';
@@ -30,7 +30,7 @@ async function main(): Promise<void> {
   await app.register(correlationIdPlugin);
   registerHealthRoutes(app);
   registerInternalRoutes(app);
-  registerEventRoutes(app);
+  registerSubscribers(app);
 
   app.setErrorHandler((err, request, reply) => {
     request.log.error({ err, correlationId: request.correlationId }, 'unhandled error');
