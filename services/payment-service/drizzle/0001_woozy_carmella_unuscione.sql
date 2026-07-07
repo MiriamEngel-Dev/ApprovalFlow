@@ -1,0 +1,1 @@
+ALTER TABLE "department_budgets" ADD CONSTRAINT "department_budgets_non_negative_check" CHECK ("department_budgets"."reserved" >= 0 AND "department_budgets"."spent" >= 0);

@@ -14,6 +14,11 @@ import { sql } from 'drizzle-orm';
 /**
  * Saga state (ADR-003, ADR-004). `CHECK(reserved+spent<=total)` is a database-level invariant —
  * enforced even if application logic has a bug, not just relied on via row-locking discipline.
+ * The non-negativity checks are the same idea applied to the lower bound: normal saga flow
+ * (reserve increments `reserved`; confirm moves `reserved`->`spent`; compensate decrements
+ * `reserved`) should never drive either column negative, but a double-confirm/double-compensate
+ * bug (bypassing the `processed_events`/`UNIQUE(submission_id)` dedup upstream) would — this
+ * CHECK makes that impossible regardless of what application code does.
  */
 export const departmentBudgets = pgTable(
   'department_budgets',
@@ -29,6 +34,10 @@ export const departmentBudgets = pgTable(
     budgetCheck: check(
       'department_budgets_no_overspend_check',
       sql`${table.reserved} + ${table.spent} <= ${table.total}`,
+    ),
+    nonNegativeCheck: check(
+      'department_budgets_non_negative_check',
+      sql`${table.reserved} >= 0 AND ${table.spent} >= 0`,
     ),
   }),
 );
