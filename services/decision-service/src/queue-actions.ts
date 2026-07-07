@@ -49,6 +49,8 @@ export async function approveQueueItem(
         submissionId: item.submissionId,
         queueId,
         approverId,
+        department: item.department,
+        amount: Number(item.amount),
       },
       correlationId: item.correlationId,
     });

@@ -110,9 +110,48 @@ services:
     depends_on:
       - decision-service
 
-  # Remaining services + their Dapr sidecars are added here one at a time: payment-service
-  # (Milestone 9), audit-service (Milestone 10), then nginx (Milestone 11) — same pattern as
-  # submission-service/decision-service above.
+  payment-service:
+    build:
+      context: .
+      dockerfile: services/payment-service/Dockerfile
+    ports:
+      - '3002:3002'
+      # 3503 (Dapr HTTP) published for direct verification during development; removed once
+      # nginx (Milestone 11) becomes the single external entry point (M6). Host-side port differs
+      # from the other services' to avoid a host port clash; each sidecar's own network namespace
+      # still uses 3500 internally (ARCHITECTURE.md §7).
+      - '3503:3500'
+    environment:
+      APP_PORT: '3002'
+      DAPR_HTTP_PORT: '3500'
+      POSTGRES_HOST: postgres
+      POSTGRES_USER: ${POSTGRES_USER:-approvalflow}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme}
+      PAYMENT_DB: payment_db
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  payment-service-dapr:
+    image: daprio/daprd:1.14.4
+    command:
+      - './daprd'
+      - '--app-id=payment-service'
+      - '--app-port=3002'
+      - '--dapr-http-port=3500'
+      - '--resources-path=/components'
+      - '--log-level=info'
+    network_mode: 'service:payment-service'
+    volumes:
+      - ./dapr/components:/components
+      - ./dapr/secrets.json:/dapr/secrets.json:ro
+    depends_on:
+      - payment-service
+
+  # Remaining services + their Dapr sidecars are added here one at a time: audit-service
+  # (Milestone 10), then nginx (Milestone 11) — same pattern as the services above.
 
 volumes:
   postgres-data:

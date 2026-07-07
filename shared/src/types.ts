@@ -122,6 +122,11 @@ export interface DecisionMadeEvent extends EventBase {
   decisionId: string;
   route: Route;
   policySnapshot: PolicyConfig;
+  /** Needed by payment-service to trigger the saga (ADR-003) on `auto_approve` without a second
+   * round-trip to submission-service — decision-service already has both in hand from its own FX
+   * normalization step. */
+  department: string;
+  amount: number;
 }
 
 export interface ApprovalTaskCreatedEvent extends EventBase {
@@ -131,6 +136,10 @@ export interface ApprovalTaskCreatedEvent extends EventBase {
 export interface ApprovalCompletedEvent extends EventBase {
   queueId: string;
   approverId: string;
+  /** Same rationale as `DecisionMadeEvent` — payment-service's saga trigger needs these
+   * regardless of which event started it. */
+  department: string;
+  amount: number;
 }
 
 export interface ApprovalRejectedEvent extends EventBase {
