@@ -3,6 +3,7 @@ import { correlationIdPlugin, createLogger } from '@approvalflow/shared';
 import { registerHealthRoutes } from './routes/health.js';
 import { registerSubmissionRoutes } from './routes/submissions.js';
 import { registerSupplementRoutes } from './routes/supplement.js';
+import { registerInternalRoutes } from './routes/internal.js';
 import { startSubmissionOutboxRelay } from './outbox-relay.js';
 
 const logger = createLogger('submission-service');
@@ -15,6 +16,7 @@ async function main(): Promise<void> {
   registerHealthRoutes(app);
   registerSubmissionRoutes(app);
   registerSupplementRoutes(app);
+  registerInternalRoutes(app);
 
   app.setErrorHandler((err, request, reply) => {
     request.log.error({ err, correlationId: request.correlationId }, 'unhandled error');
