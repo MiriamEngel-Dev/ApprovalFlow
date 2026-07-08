@@ -15,6 +15,13 @@
       "when": 1783431740566,
       "tag": "0001_woozy_carmella_unuscione",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1783525194036,
+      "tag": "0002_colorful_nebula",
+      "breakpoints": true
     }
   ]
 }

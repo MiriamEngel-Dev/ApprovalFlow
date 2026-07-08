@@ -8,7 +8,7 @@ import { randomUUID } from 'node:crypto';
 import { eq, sql as rawSql } from 'drizzle-orm';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { db } from './db/client.js';
-import { departmentBudgets, outbox, payments, reservations } from './db/schema.js';
+import { departmentBudgets, outbox, payments, processedEvents, reservations } from './db/schema.js';
 import { runPaymentSaga, type SagaTrigger } from './pipeline.js';
 import { forceFailureFor } from './mock-provider.js';
 
@@ -44,7 +44,7 @@ function trigger(overrides: Partial<SagaTrigger> = {}): SagaTrigger {
 
 beforeEach(async () => {
   await db.execute(
-    rawSql`TRUNCATE department_budgets, reservations, payments, outbox, processed_events`,
+    rawSql`TRUNCATE department_budgets, reservations, payments, outbox, processed_events, provider_charges`,
   );
 });
 
@@ -167,5 +167,23 @@ describe('runPaymentSaga — concurrency pair INV-1014A/B (M9, ADR-003)', () => 
       (r) => r.topic === 'PaymentFailed',
     );
     expect(failedOutbox).toHaveLength(1);
+  });
+});
+
+describe('runPaymentSaga — dedup marker is atomic with reserve (M10)', () => {
+  it('does not mark the event processed if reserving budget throws mid-transaction', async () => {
+    // No budget seeded for this department — reserveBudget throws inside the same transaction
+    // that writes the processed_events row. Before the fix, that insert was a separate statement
+    // ahead of reserveBudget, so it would have survived this throw and the event would have been
+    // permanently (and silently) dropped on any redelivery.
+    const t = trigger({ department: 'nonexistent-department' });
+
+    await expect(runPaymentSaga(t)).rejects.toThrow(/No department budget seeded/);
+
+    const processed = await db
+      .select()
+      .from(processedEvents)
+      .where(eq(processedEvents.eventId, t.eventId));
+    expect(processed).toHaveLength(0);
   });
 });

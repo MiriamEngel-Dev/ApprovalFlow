@@ -87,6 +87,27 @@ export const payments = pgTable(
   }),
 );
 
+/** Durable ledger for the mock payment provider (M9, M11). Keyed by `idempotencyKey` so `charge()`
+ * is naturally idempotent across retries. Persisted (not an in-memory Map) because the
+ * stuck-reservation scanner's whole recovery strategy is "ask the provider by idempotency key
+ * whether the charge went through" — that answer has to survive a process restart, the exact
+ * scenario the scanner exists to recover from. */
+export const providerCharges = pgTable(
+  'provider_charges',
+  {
+    idempotencyKey: varchar('idempotency_key', { length: 256 }).primaryKey(),
+    status: varchar('status', { length: 16 }).notNull(),
+    providerRef: varchar('provider_ref', { length: 256 }).notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    statusCheck: check(
+      'provider_charges_status_check',
+      sql`${table.status} IN ('charged', 'declined')`,
+    ),
+  }),
+);
+
 /** Outbox pattern (N3, M10) — same shape as submission-service's/decision-service's (ADR-005). */
 export const outbox = pgTable(
   'outbox',
