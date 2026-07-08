@@ -11,7 +11,12 @@ import { approveQueueItem, rejectQueueItem, requestInfoOnQueueItem } from './que
 async function seedPendingQueueItem(): Promise<string> {
   const [row] = await db
     .insert(approvalQueue)
-    .values({ submissionId: randomUUID(), correlationId: randomUUID() })
+    .values({
+      submissionId: randomUUID(),
+      correlationId: randomUUID(),
+      department: 'engineering-2026Q2',
+      amount: '1400.00',
+    })
     .returning({ id: approvalQueue.id });
   if (!row) throw new Error('seed insert returned no row');
   return row.id;

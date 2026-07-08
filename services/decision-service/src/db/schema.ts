@@ -58,6 +58,12 @@ export const approvalQueue = pgTable(
     id: uuid('id').primaryKey().defaultRandom(),
     submissionId: uuid('submission_id').notNull(),
     status: varchar('status', { length: 16 }).notNull().default('pending'),
+    /** Carried on the row (not re-derived at approve-time) so `approveQueueItem` can publish
+     * `ApprovalCompleted` with what payment-service's saga trigger needs (ADR-003) without a
+     * second lookup — set once, from the normalized invoice already in hand, when the row is
+     * created in pipeline.ts. */
+    department: varchar('department', { length: 128 }).notNull(),
+    amount: numeric('amount', { precision: 12, scale: 2 }).notNull(),
     approverId: varchar('approver_id', { length: 256 }),
     approverNote: varchar('approver_note', { length: 2048 }),
     requestInfoNote: varchar('request_info_note', { length: 2048 }),

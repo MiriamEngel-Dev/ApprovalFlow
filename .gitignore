@@ -27,3 +27,7 @@ Thumbs.db
 
 # Docker volumes captured locally (if any)
 .docker-data/
+
+# Locally trusted extra CA certs (corporate proxy / AV TLS inspection) — machine-specific,
+# never committed. See docker/certs/README.md.
+docker/certs/*.crt

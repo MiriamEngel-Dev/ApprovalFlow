@@ -9,6 +9,11 @@ import { validateInvoice } from '../validation.js';
 interface DecisionSummary {
   route: Route;
   violations: PolicyViolation[];
+  approval?: {
+    status: 'pending' | 'approved' | 'rejected' | 'info_requested';
+    approverNote?: string | null;
+    requestInfoNote?: string | null;
+  };
 }
 
 export function registerSubmissionRoutes(app: FastifyInstance): void {
@@ -60,13 +65,34 @@ export function registerSubmissionRoutes(app: FastifyInstance): void {
     }
 
     const route = decision?.route;
-    const reason = route ? buildReason(route, decision?.violations ?? []) : 'Awaiting assessment.';
+    let status: string = route ?? 'pending';
+    let reason = route ? buildReason(route, decision?.violations ?? []) : 'Awaiting assessment.';
+
+    // A human's resolution of an escalated item overrides the router's own route for display —
+    // otherwise a submitter whose item was approved (and paid) would see "Escalated for human
+    // review" forever, since `decisions.route` is an immutable audit trail (F9), never rewritten
+    // to reflect what the approver decided.
+    const approval = decision?.approval;
+    if (approval?.status === 'approved') {
+      status = 'approved';
+      reason = 'Approved by a human reviewer.';
+    } else if (approval?.status === 'rejected') {
+      status = 'rejected';
+      reason = approval.approverNote
+        ? `Rejected by a human reviewer: ${approval.approverNote}`
+        : 'Rejected by a human reviewer.';
+    } else if (approval?.status === 'info_requested') {
+      status = 'info_requested';
+      reason = approval.requestInfoNote
+        ? `More information needed: ${approval.requestInfoNote}`
+        : 'More information needed.';
+    }
 
     return reply.send({
       id: submission.id,
       trackingId: submission.trackingId,
       correlationId: submission.correlationId,
-      status: route ?? 'pending',
+      status,
       reason,
       submittedAt: submission.createdAt,
     });

@@ -132,6 +132,8 @@ export async function processInvoiceEvent(
         decisionId: decisionRow.id,
         route: result.route,
         policySnapshot: policy,
+        department: normalized.department,
+        amount: normalized.convertedTotal,
       },
       correlationId: event.correlationId,
     });
@@ -152,12 +154,22 @@ export async function processInvoiceEvent(
         queueId = existingQueueItem.id;
         await tx
           .update(approvalQueue)
-          .set({ status: 'pending', resolvedAt: null })
+          .set({
+            status: 'pending',
+            resolvedAt: null,
+            department: normalized.department,
+            amount: normalized.convertedTotal.toFixed(2),
+          })
           .where(eq(approvalQueue.id, queueId));
       } else {
         const [inserted] = await tx
           .insert(approvalQueue)
-          .values({ submissionId: event.submissionId, correlationId: event.correlationId })
+          .values({
+            submissionId: event.submissionId,
+            correlationId: event.correlationId,
+            department: normalized.department,
+            amount: normalized.convertedTotal.toFixed(2),
+          })
           .returning({ id: approvalQueue.id });
         if (!inserted) throw new Error('Insert into approval_queue returned no row');
         queueId = inserted.id;
