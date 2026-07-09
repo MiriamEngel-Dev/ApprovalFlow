@@ -4,7 +4,7 @@
 // this test never needs a live Dapr sidecar — policy-cache.ts's own caching/version-bump behavior
 // is covered separately in policy-cache.test.ts with mocked state calls.
 import { randomUUID } from 'node:crypto';
-import { sql as rawSql } from 'drizzle-orm';
+import { and, eq, sql as rawSql } from 'drizzle-orm';
 import { beforeEach, describe, expect, it } from 'vitest';
 import type { AgentAssessment, Invoice, PolicyConfig } from '@approvalflow/shared';
 import { db } from './db/client.js';
@@ -93,6 +93,16 @@ describe('processInvoiceEvent — auto-approve path (M12, ADR-012)', () => {
     const outboxRows = await db.select().from(outbox);
     expect(outboxRows).toHaveLength(1);
     expect(outboxRows[0]?.topic).toBe('DecisionMade');
+
+    // F4/F9: audit-service (a passive subscriber) can only ever store what this payload carries —
+    // without these fields on the wire, the audit trail's "rules applied, the agent's reasoning"
+    // is silently incomplete even though `decisions` itself has the data.
+    const payload = outboxRows[0]?.payload as Record<string, unknown>;
+    expect(payload.agentRecommendation).toBe('approve');
+    expect(payload.agentConfidence).toBe(0.94);
+    expect(payload.agentReasoning).toBe(APPROVE_ASSESSMENT.reasoning);
+    expect(payload.rulesCited).toEqual(['MEAL-01']);
+    expect(payload.violations).toEqual([]);
   });
 });
 
@@ -127,6 +137,107 @@ describe('processInvoiceEvent — event dedup (M10)', () => {
 
     expect(await db.select().from(decisions)).toHaveLength(1);
     expect(await db.select().from(outbox)).toHaveLength(1);
+  });
+
+  it('two truly concurrent redeliveries of the same eventId still produce exactly one decision', async () => {
+    const event = submittedEvent(AUTO_APPROVE_INVOICE);
+
+    const [first, second] = await Promise.all([
+      processInvoiceEvent(event, fakeProvider(APPROVE_ASSESSMENT), POLICY),
+      processInvoiceEvent(event, fakeProvider(APPROVE_ASSESSMENT), POLICY),
+    ]);
+
+    const statuses = [first.status, second.status].sort();
+    expect(statuses).toEqual(['duplicate-event', 'processed']);
+    expect(await db.select().from(decisions)).toHaveLength(1);
+    expect(await db.select().from(outbox)).toHaveLength(1);
+  });
+});
+
+describe('processInvoiceEvent — re-assessment supersedes an in-flight queue item (F5)', () => {
+  const LOW_CONFIDENCE_ASSESSMENT: AgentAssessment = {
+    recommendation: 'review',
+    confidence: 0.5,
+    reasoning: 'Ambiguous category.',
+    rulesCited: [],
+    violations: [],
+  };
+
+  it('marks a pending/info_requested queue row superseded when a supplement resolves it to auto_approve', async () => {
+    const submissionId = randomUUID();
+    const correlationId = randomUUID();
+
+    const firstEvent = submittedEvent(AUTO_APPROVE_INVOICE, {
+      submissionId,
+      correlationId,
+      kind: 'submitted',
+    });
+    await processInvoiceEvent(firstEvent, fakeProvider(LOW_CONFIDENCE_ASSESSMENT), POLICY);
+
+    const [queueBefore] = await db
+      .select()
+      .from(approvalQueue)
+      .where(eq(approvalQueue.submissionId, submissionId));
+    expect(queueBefore?.status).toBe('pending');
+
+    // Simulate an approver's request-info round having already paused it (queue-actions.ts owns
+    // this transition in production; setting it directly keeps this test scoped to pipeline.ts).
+    await db
+      .update(approvalQueue)
+      .set({ status: 'info_requested' })
+      .where(eq(approvalQueue.id, queueBefore!.id));
+
+    const secondEvent = submittedEvent(AUTO_APPROVE_INVOICE, {
+      submissionId,
+      correlationId,
+      kind: 'supplemented',
+      eventId: randomUUID(),
+    });
+    await processInvoiceEvent(secondEvent, fakeProvider(APPROVE_ASSESSMENT), POLICY);
+
+    const [decisionV2] = await db
+      .select()
+      .from(decisions)
+      .where(and(eq(decisions.submissionId, submissionId), eq(decisions.version, 2)));
+    expect(decisionV2?.route).toBe('auto_approve');
+
+    const [queueAfter] = await db
+      .select()
+      .from(approvalQueue)
+      .where(eq(approvalQueue.submissionId, submissionId));
+    expect(queueAfter?.status).toBe('superseded');
+    expect(queueAfter?.resolvedAt).not.toBeNull();
+  });
+
+  it('never overwrites a queue item a human already approved or rejected', async () => {
+    const submissionId = randomUUID();
+    const correlationId = randomUUID();
+
+    const [seeded] = await db
+      .insert(approvalQueue)
+      .values({
+        submissionId,
+        correlationId,
+        department: AUTO_APPROVE_INVOICE.department,
+        amount: '42.00',
+        status: 'approved',
+        resolvedAt: new Date(),
+        approverId: 'manager@northwind.example',
+      })
+      .returning({ id: approvalQueue.id });
+
+    const event = submittedEvent(AUTO_APPROVE_INVOICE, {
+      submissionId,
+      correlationId,
+      kind: 'supplemented',
+    });
+    await processInvoiceEvent(event, fakeProvider(APPROVE_ASSESSMENT), POLICY);
+
+    const [queueAfter] = await db
+      .select()
+      .from(approvalQueue)
+      .where(eq(approvalQueue.id, seeded!.id));
+    expect(queueAfter?.status).toBe('approved');
   });
 });
 

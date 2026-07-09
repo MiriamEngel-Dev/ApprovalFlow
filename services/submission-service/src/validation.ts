@@ -34,6 +34,13 @@ export function validateInvoice(body: unknown): ValidationResult {
   if (typeof b.total !== 'number') errors.push('total must be a number');
   if (typeof b.receiptPresent !== 'boolean') errors.push('receiptPresent must be a boolean');
   if (typeof b.date !== 'string' || !b.date) errors.push('date is required');
+  // `notes` is free text that reaches the LLM prompt verbatim (gemini-provider.ts) — the prompt
+  // itself instructs the model to treat it as untrusted, but bounding its length here is a cheap
+  // additional technical control, not just a verbal one, against a submitter trying to pad it
+  // with steering text.
+  if (b.notes !== undefined && (typeof b.notes !== 'string' || b.notes.length > 2048)) {
+    errors.push('notes must be a string of at most 2048 characters');
+  }
 
   if (errors.length > 0) return { valid: false, errors };
   return { valid: true, invoice: b as unknown as Invoice };

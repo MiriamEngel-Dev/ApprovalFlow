@@ -1,4 +1,3 @@
-import { eq } from 'drizzle-orm';
 import { createLogger, TOPICS } from '@approvalflow/shared';
 import { db, type Tx } from './db/client.js';
 import { outbox, processedEvents } from './db/schema.js';
@@ -37,15 +36,19 @@ async function dedupAndReserve(
   trigger: SagaTrigger,
 ): Promise<{ duplicate: true } | { duplicate: false; reserveResult: ReserveResult }> {
   return db.transaction(async (tx) => {
-    const alreadyProcessed = await tx
-      .select({ eventId: processedEvents.eventId })
-      .from(processedEvents)
-      .where(eq(processedEvents.eventId, trigger.eventId))
-      .limit(1);
-    if (alreadyProcessed.length > 0) {
+    // A plain select-then-insert here isn't race-proof against two truly concurrent redeliveries
+    // of the same eventId (both selects can see "not present" before either transaction commits,
+    // then both inserts race on the real PK constraint — reproduced directly in
+    // decision-service's pipeline.test.ts for the identical pattern). `onConflictDoNothing` +
+    // `returning` is atomic: whichever insert lands first wins and gets a row back.
+    const [inserted] = await tx
+      .insert(processedEvents)
+      .values({ eventId: trigger.eventId })
+      .onConflictDoNothing({ target: processedEvents.eventId })
+      .returning({ eventId: processedEvents.eventId });
+    if (!inserted) {
       return { duplicate: true } as const;
     }
-    await tx.insert(processedEvents).values({ eventId: trigger.eventId });
 
     const reserveResult = await reserveBudget(
       tx,

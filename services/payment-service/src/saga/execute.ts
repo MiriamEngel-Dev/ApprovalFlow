@@ -31,11 +31,22 @@ export async function executePayment(submissionId: string, amount: number): Prom
     return { status: 'declined' };
   }
 
+  // Insert-or-return-existing: the SELECT above is a cheap pre-check, not authoritative — a
+  // concurrent call reaching this same insert for the same idempotencyKey is resolved by the
+  // UNIQUE constraint via onConflictDoNothing rather than throwing (same pattern as
+  // mock-provider.ts's charge()).
   const [inserted] = await db
     .insert(payments)
     .values({ submissionId, idempotencyKey, amount: amount.toFixed(2), status: 'completed' })
+    .onConflictDoNothing({ target: payments.idempotencyKey })
     .returning({ id: payments.id });
-  if (!inserted) throw new Error('Insert into payments returned no row');
+  if (inserted) return { status: 'charged', paymentId: inserted.id };
 
-  return { status: 'charged', paymentId: inserted.id };
+  const [winner] = await db
+    .select()
+    .from(payments)
+    .where(eq(payments.idempotencyKey, idempotencyKey))
+    .limit(1);
+  if (!winner) throw new Error(`payments row for "${idempotencyKey}" vanished after conflict`);
+  return { status: 'charged', paymentId: winner.id };
 }

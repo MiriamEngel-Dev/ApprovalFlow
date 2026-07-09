@@ -128,6 +128,7 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:-approvalflow}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme}
       PAYMENT_DB: payment_db
+      TEST_HARNESS_SECRET: ${TEST_HARNESS_SECRET:-change-me-to-a-long-random-string}
     depends_on:
       postgres:
         condition: service_healthy

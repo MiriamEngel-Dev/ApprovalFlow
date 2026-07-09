@@ -65,26 +65,69 @@ export async function publishEvent(
   await assertOk(res, `publish ${pubsubName}/${topic}`);
 }
 
+/** Thrown by `saveState` when an entry carries an `etag` that no longer matches the store's
+ * current value (Dapr returns 409) — someone else wrote to this key first. */
+export class StateConflictError extends Error {
+  constructor(storeName: string, key: string) {
+    super(`Concurrent update conflict on ${storeName}/${key}`);
+    this.name = 'StateConflictError';
+  }
+}
+
+export interface SaveStateEntry {
+  key: string;
+  value: unknown;
+  /** Pass the `etag` from a prior `getStateWithETag` read to get optimistic-concurrency
+   * protection (Dapr's `first-write` mode — 409 if the key changed since that read). Omit for an
+   * unconditional write (e.g. seeding a key for the first time). */
+  etag?: string;
+}
+
 /** Save one or more keys in a Dapr state store. */
-export async function saveState(
-  storeName: string,
-  entries: { key: string; value: unknown }[],
-): Promise<void> {
+export async function saveState(storeName: string, entries: SaveStateEntry[]): Promise<void> {
+  const body = entries.map((entry) => ({
+    key: entry.key,
+    value: entry.value,
+    ...(entry.etag ? { etag: entry.etag, options: { concurrency: 'first-write' } } : {}),
+  }));
   const res = await fetch(`${DAPR_BASE_URL}/state/${storeName}`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify(entries),
+    body: JSON.stringify(body),
   });
+  if (res.status === 409) {
+    throw new StateConflictError(storeName, entries[0]?.key ?? '');
+  }
   await assertOk(res, `save state on ${storeName}`);
 }
 
-/** Read a single key from a Dapr state store. Returns undefined if the key is absent. */
-export async function getState<T>(storeName: string, key: string): Promise<T | undefined> {
+export interface StateWithETag<T> {
+  value: T;
+  /** Absent if the store/component doesn't support etags — callers should treat that as "no
+   * concurrency protection available" rather than an error. */
+  etag?: string;
+}
+
+/** Read a single key from a Dapr state store, along with its etag for optimistic-concurrency
+ * writes via `saveState`. Returns undefined if the key is absent. */
+export async function getStateWithETag<T>(
+  storeName: string,
+  key: string,
+): Promise<StateWithETag<T> | undefined> {
   const res = await fetch(`${DAPR_BASE_URL}/state/${storeName}/${encodeURIComponent(key)}`);
   if (res.status === 204) return undefined;
   await assertOk(res, `get state ${storeName}/${key}`);
   const text = await res.text();
-  return text ? (JSON.parse(text) as T) : undefined;
+  if (!text) return undefined;
+  const etag = res.headers.get('etag');
+  return { value: JSON.parse(text) as T, ...(etag ? { etag } : {}) };
+}
+
+/** Read a single key from a Dapr state store. Returns undefined if the key is absent. Callers
+ * that need optimistic-concurrency writes should use `getStateWithETag` instead. */
+export async function getState<T>(storeName: string, key: string): Promise<T | undefined> {
+  const result = await getStateWithETag<T>(storeName, key);
+  return result?.value;
 }
 
 /** Read a secret from a Dapr secret store. */

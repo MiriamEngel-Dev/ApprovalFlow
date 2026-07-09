@@ -45,7 +45,8 @@ export function registerInternalRoutes(app: FastifyInstance): void {
         violations: latest.violations as PolicyViolation[],
         approval: queueItem
           ? {
-              status: queueItem.status as 'pending' | 'approved' | 'rejected' | 'info_requested',
+              status: queueItem.status as
+                'pending' | 'approved' | 'rejected' | 'info_requested' | 'superseded',
               approverNote: queueItem.approverNote,
               requestInfoNote: queueItem.requestInfoNote,
             }

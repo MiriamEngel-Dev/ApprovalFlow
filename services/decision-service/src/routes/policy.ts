@@ -1,4 +1,5 @@
 import type { FastifyInstance } from 'fastify';
+import { StateConflictError } from '@approvalflow/shared';
 import { getPolicyConfig, updatePolicyConfig } from '../policy-cache.js';
 
 interface UpdatePolicyBody {
@@ -32,7 +33,16 @@ export function registerPolicyRoutes(app: FastifyInstance): void {
     if (ceiling !== undefined) patch.ceiling = ceiling;
     if (confidenceThreshold !== undefined) patch.confidenceThreshold = confidenceThreshold;
 
-    const updated = await updatePolicyConfig(patch);
-    return reply.send(updated);
+    try {
+      const updated = await updatePolicyConfig(patch);
+      return reply.send(updated);
+    } catch (err) {
+      if (err instanceof StateConflictError) {
+        return reply
+          .status(409)
+          .send({ error: 'Policy was updated concurrently — retry your request' });
+      }
+      throw err;
+    }
   });
 }
