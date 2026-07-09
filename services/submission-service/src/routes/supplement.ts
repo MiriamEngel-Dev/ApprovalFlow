@@ -5,15 +5,18 @@ import { db } from '../db/client.js';
 import { outbox, submissions } from '../db/schema.js';
 import { validateInvoice } from '../validation.js';
 
-interface DecisionSummary {
-  route: Route;
-  violations: PolicyViolation[];
-  approval?: {
-    status: 'pending' | 'approved' | 'rejected' | 'info_requested' | 'superseded';
-    approverNote?: string | null;
-    requestInfoNote?: string | null;
-  };
-}
+type DecisionSummary =
+  | { found: false }
+  | {
+      found: true;
+      route: Route;
+      violations: PolicyViolation[];
+      approval?: {
+        status: 'pending' | 'approved' | 'rejected' | 'info_requested' | 'superseded';
+        approverNote?: string | null;
+        requestInfoNote?: string | null;
+      };
+    };
 
 export type SupplementResult =
   | { status: 'ok'; submissionId: string }
@@ -42,15 +45,16 @@ export async function applySupplement(
     .limit(1);
   if (!submission) return { status: 'not_found' };
 
-  let decision: DecisionSummary | undefined;
+  let decision: Extract<DecisionSummary, { found: true }> | undefined;
   try {
-    decision = await invokeService<DecisionSummary>(
+    const result = await invokeService<DecisionSummary>(
       'decision-service',
       `internal/decisions/by-submission/${submission.id}`,
     );
+    decision = result.found ? result : undefined;
   } catch {
-    // No decision recorded yet, or decision-service unreachable — either way, not something a
-    // supplement can legitimately resolve right now; falls through to not_awaiting_info below.
+    // decision-service unreachable — not something a supplement can legitimately resolve right
+    // now; falls through to not_awaiting_info below, same as the "no decision yet" case.
   }
   if (decision?.approval?.status !== 'info_requested') {
     return { status: 'not_awaiting_info' };

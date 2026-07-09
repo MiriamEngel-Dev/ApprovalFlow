@@ -6,15 +6,18 @@ import { submissions } from '../db/schema.js';
 import { submitInvoice } from '../idempotency.js';
 import { validateInvoice } from '../validation.js';
 
-interface DecisionSummary {
-  route: Route;
-  violations: PolicyViolation[];
-  approval?: {
-    status: 'pending' | 'approved' | 'rejected' | 'info_requested' | 'superseded';
-    approverNote?: string | null;
-    requestInfoNote?: string | null;
-  };
-}
+type DecisionSummary =
+  | { found: false }
+  | {
+      found: true;
+      route: Route;
+      violations: PolicyViolation[];
+      approval?: {
+        status: 'pending' | 'approved' | 'rejected' | 'info_requested' | 'superseded';
+        approverNote?: string | null;
+        requestInfoNote?: string | null;
+      };
+    };
 
 /** Structural subset of Fastify's/Pino's logger — just what this needs, so a plain test double
  * works without pulling in either library's exact (and mutually incompatible) Logger type. */
@@ -29,19 +32,23 @@ interface WarnLogger {
  *
  * Never throws — reported as "no decision yet" either way (a submitter checking status shouldn't
  * be exposed to internal wiring gaps as a 5xx), but a real outage must not be silent (M14/M15):
- * without the log line, a genuine decision-service outage is indistinguishable in the logs from
- * the completely normal "no decision recorded yet" case.
+ * only the actually-unreachable case is logged. `{found: false}` (no decision recorded yet) is a
+ * normal, expected response — not logged, and deliberately never surfaced to the caller as an
+ * error status by decision-service, since Dapr's circuit breaker treats any non-2xx as a failure
+ * and would otherwise trip on routine status polling (see `internal.ts` on the decision-service
+ * side for the full explanation).
  */
 export async function lookupDecision(
   submissionId: string,
   correlationId: string | undefined,
   logger: WarnLogger,
-): Promise<DecisionSummary | undefined> {
+): Promise<Extract<DecisionSummary, { found: true }> | undefined> {
   try {
-    return await invokeService<DecisionSummary>(
+    const result = await invokeService<DecisionSummary>(
       'decision-service',
       `internal/decisions/by-submission/${submissionId}`,
     );
+    return result.found ? result : undefined;
   } catch (err) {
     logger.warn(
       { err, correlationId, submissionId },
