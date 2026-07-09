@@ -6,9 +6,34 @@ on:
   pull_request:
     branches: [main, core]
 
+env:
+  POSTGRES_USER: approvalflow
+  POSTGRES_PASSWORD: changeme
+  POSTGRES_HOST: localhost
+  POSTGRES_PORT: '5432'
+  SUBMISSION_DB: submission_db
+  DECISION_DB: decision_db
+  PAYMENT_DB: payment_db
+  AUDIT_DB: audit_db
+
 jobs:
-  lint-and-typecheck:
+  test:
     runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: approvalflow
+          POSTGRES_PASSWORD: changeme
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U approvalflow"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
     steps:
       - uses: actions/checkout@v4
 
@@ -20,6 +45,30 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      # M16/M17/N6: this project doesn't separate "unit" from "integration" test files (every
+      # service's single `vitest run` already mixes pure-logic tests with ones hitting a real
+      # Postgres — see services/{payment,decision,submission}-service test files), so one test
+      # gate with a live Postgres available satisfies both halves of that requirement rather than
+      # inventing an artificial split that would just rerun the same tests twice.
+      - name: Create per-service databases
+        run: PGPASSWORD=changeme psql -h localhost -U approvalflow -d postgres -f postgres/init-databases.sql
+
+      - name: Run migrations (submission-service)
+        run: npx drizzle-kit migrate
+        working-directory: services/submission-service
+
+      - name: Run migrations (decision-service)
+        run: npx drizzle-kit migrate
+        working-directory: services/decision-service
+
+      - name: Run migrations (payment-service)
+        run: npx drizzle-kit migrate
+        working-directory: services/payment-service
+
+      - name: Run migrations (audit-service)
+        run: npx drizzle-kit migrate
+        working-directory: services/audit-service
+
       - name: Lint
         run: npm run lint
 
@@ -29,5 +78,52 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
 
-  # TODO (Milestone 13): unit tests, integration tests (Postgres/Redis services),
-  # docker compose build, and npm run verify against a live cluster.
+      - name: Test
+        run: npm test
+
+  verify:
+    needs: test
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build all service images
+        run: docker compose build
+
+      - name: Start the cluster
+        run: docker compose up -d
+
+      - name: Wait for the gateway to be healthy
+        run: |
+          for i in $(seq 1 60); do
+            if curl -sf http://localhost:8080/health > /dev/null; then
+              echo "gateway is up"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "gateway never became healthy" >&2
+          exit 1
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      # D5 (required): Journeys A/B/C/D + both anti-cheese guards + "≥2 auto-approvals," against
+      # the live cluster started above — this is the real acceptance gate for the whole system,
+      # not just its parts (docs/IMPLEMENTATION-PLAN.md Milestone 13's own "Done" bar).
+      - name: Run verification suite
+        run: npm run verify
+
+      - name: Show service logs (always, for debugging)
+        if: always()
+        run: docker compose logs
+
+      - name: Tear down the cluster (always)
+        if: always()
+        run: docker compose down -v
