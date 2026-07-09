@@ -16,13 +16,23 @@ beforeEach(() => {
 
 describe('lookupDecision — M14/M15 (structured logging, fail cleanly not silently)', () => {
   it('returns the decision on success without logging anything', async () => {
-    const decision = { route: 'auto_approve', violations: [] };
+    const decision = { found: true, route: 'auto_approve', violations: [] };
     invokeServiceMock.mockResolvedValue(decision);
     const warn = vi.fn();
 
     const result = await lookupDecision('sub-1', 'corr-1', { warn });
 
     expect(result).toEqual(decision);
+    expect(warn).not.toHaveBeenCalled();
+  });
+
+  it('returns undefined without logging anything when no decision has been recorded yet — this must never be treated as a failure (a Dapr circuit breaker on decision-service is shared between this sync lookup and InvoiceSubmitted pub/sub delivery; routine status polling before a decision exists must not trip it)', async () => {
+    invokeServiceMock.mockResolvedValue({ found: false });
+    const warn = vi.fn();
+
+    const result = await lookupDecision('sub-1', 'corr-1', { warn });
+
+    expect(result).toBeUndefined();
     expect(warn).not.toHaveBeenCalled();
   });
 

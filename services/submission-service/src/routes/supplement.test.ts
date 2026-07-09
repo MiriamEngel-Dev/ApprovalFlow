@@ -65,13 +65,25 @@ describe('applySupplement — F5 guard (only accept while decision-service is aw
 
   it('rejects with not_awaiting_info when decision-service reports no info_requested item', async () => {
     const id = await seedSubmission();
-    invokeServiceMock.mockResolvedValue({ route: 'human_review', violations: [] }); // no `approval`
+    invokeServiceMock.mockResolvedValue({
+      found: true,
+      route: 'human_review',
+      violations: [],
+    }); // no `approval`
 
     const result = await applySupplement(id, { attendees: 2 });
     expect(result.status).toBe('not_awaiting_info');
 
     const [row] = await db.select().from(submissions);
     expect(row?.payload).toEqual(BASE_INVOICE); // untouched
+  });
+
+  it('rejects with not_awaiting_info when decision-service reports no decision recorded yet', async () => {
+    const id = await seedSubmission();
+    invokeServiceMock.mockResolvedValue({ found: false });
+
+    const result = await applySupplement(id, { attendees: 2 });
+    expect(result.status).toBe('not_awaiting_info');
   });
 
   it('rejects with not_awaiting_info when decision-service is unreachable', async () => {
@@ -85,6 +97,7 @@ describe('applySupplement — F5 guard (only accept while decision-service is aw
   it('rejects an invalid merged payload with 400-equivalent, even while awaiting info', async () => {
     const id = await seedSubmission();
     invokeServiceMock.mockResolvedValue({
+      found: true,
       route: 'human_review',
       violations: [],
       approval: { status: 'info_requested' },
@@ -100,6 +113,7 @@ describe('applySupplement — F5 guard (only accept while decision-service is aw
   it('merges the patch and publishes InvoiceSupplemented when genuinely awaiting info', async () => {
     const id = await seedSubmission();
     invokeServiceMock.mockResolvedValue({
+      found: true,
       route: 'human_review',
       violations: [],
       approval: { status: 'info_requested' },
