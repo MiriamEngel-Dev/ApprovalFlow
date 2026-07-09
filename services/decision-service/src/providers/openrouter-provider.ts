@@ -76,8 +76,8 @@ export class OpenRouterProvider implements AgentProvider {
       throw new LlmProviderError('OpenRouter response was not valid JSON', err);
     }
 
-    const text = (json as { choices?: { message?: { content?: string } }[] }).choices?.[0]
-      ?.message?.content;
+    const text = (json as { choices?: { message?: { content?: string } }[] }).choices?.[0]?.message
+      ?.content;
     if (!text) throw new LlmProviderError('OpenRouter response missing message content');
 
     let assessment: AgentAssessment;

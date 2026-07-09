@@ -73,9 +73,7 @@ export function registerSubmissionRoutes(app: FastifyInstance, signingKey: strin
     async (request, reply) => {
       const validation = validateInvoice(request.body);
       if (!validation.valid) {
-        return reply
-          .status(400)
-          .send({ error: 'Invalid submission', details: validation.errors });
+        return reply.status(400).send({ error: 'Invalid submission', details: validation.errors });
       }
 
       const result = await submitInvoice(validation.invoice, request.correlationId);

@@ -27,7 +27,8 @@ const signingKey = process.env.JWT_SIGNING_KEY;
 if (!signingKey) {
   console.error(
     'JWT_SIGNING_KEY is not set — pass it via .env (must match dapr/secrets.json), e.g.\n' +
-      '  node --env-file=.env scripts/generate-jwt.js ' + role,
+      '  node --env-file=.env scripts/generate-jwt.js ' +
+      role,
   );
   process.exit(1);
 }
