@@ -372,7 +372,7 @@ namespace), reachable on the Docker network by service name (e.g. `http://submis
 | **State Store** | Redis | Idempotency keys, processed event cache, budget locks, policy cache |
 | **Secrets** | Local file (`/dapr/secrets.json`) | LLM API key, JWT signing key (swap to key vault in production) |
 | **Configuration** | Dapr state (hot-reload) | Policy thresholds via `PUT /api/policy` → 5s cache TTL; each `PUT` also bumps a `policy:version` integer (§10, Policy Snapshot) |
-| **Resiliency** | Dapr resiliency config | Timeouts (5s–30s), retries (3×), circuit breakers |
+| **Resiliency** | Dapr resiliency config | Timeouts (5s–30s), retries (3×) |
 
 **Per-call timeout budget** (`dapr/components/resiliency.yaml`):
 
@@ -382,15 +382,16 @@ namespace), reachable on the Docker network by service name (e.g. `http://submis
 | decision-service → payment-service (saga trigger, sync invoke) | ~10s | Saga steps do DB work + one external mock-provider call |
 | Ordinary Dapr service invocation (gateway→service, health checks) | ~5s | No external I/O expected on these paths |
 
-All three retry 3× with exponential backoff before the circuit breaker opens (5 consecutive
-failures → 60s open).
+All three retry 3× at a constant 1s interval, only on request-level failures (connection
+errors, timeouts) or a 5xx/429 response — never on an ordinary 4xx business response
+(§10 explains why no circuit breaker sits on top of this).
 
 ### Dapr Component Files
 
 All components in `dapr/components/`, volume-mounted into each sidecar: `pubsub.yaml` (Redis,
 host `redis:6379`), `statestore.yaml` (Redis, same host), `secrets.yaml` (local file at
 `/dapr/secrets.json`, holding `LLM_API_KEY` and `JWT_SIGNING_KEY`), `resiliency.yaml` (global
-timeouts/retries/circuit breakers).
+timeouts/retries).
 
 **nginx → Dapr:** nginx calls sidecars directly by service name (no sidecar of its own), e.g.
 `http://submission-service:3500/v1.0/invoke/submission-service/method/api/submissions`.
@@ -580,7 +581,18 @@ A request with a valid signature but the wrong role gets `403`; a missing/invali
 - **Rate limiting:** nginx — 100 req/min per IP, burst 20, delay 10. Excess returns 429.
 - **Bulkhead:** decision-service limits concurrent LLM calls to 5 (semaphore). Submission intake
   limited to 50 concurrent requests per instance.
-- **Circuit breakers:** Dapr resiliency — per-service, 5 consecutive failures → 60s open.
+- **Retries, not circuit breakers:** Dapr resiliency retries 3× (constant 1s interval) on a
+  request-level failure — connection error, timeout, or a 5xx/429 response — never on an ordinary
+  4xx business response (401/403/404/400 are normal, expected outcomes of a request the service
+  understood and rejected on purpose, not a sign the service is unhealthy), enforced via
+  `matching.httpStatusCodes` in `dapr/components/resiliency.yaml`. No circuit breaker sits on top
+  of this: Dapr's circuit breaker counts *any* non-2xx invoke response as a failure toward its
+  trip threshold with no way to scope it to genuine infrastructure failures only — confirmed live
+  that a handful of ordinary 401s (a gateway rejecting unauthenticated requests, completely normal
+  traffic) would black out an entire target app for 60s, including subsequently valid requests.
+  Timeout + retry alone already give real protection against a genuinely failing dependency;
+  layering a circuit breaker that can't tell "rejected on purpose" from "unhealthy" apart isn't
+  safe to add on top, given this constraint in Dapr's current implementation.
 - **Connection pools:** PostgreSQL — max 20 connections **per service instance**. No service can
   exhaust another's pool; N replicas of one service means N× that pool count against PostgreSQL
   (see Horizontal Scaling below).

@@ -1,6 +1,12 @@
 import { eq } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
-import { invokeService, TOPICS, type PolicyViolation, type Route } from '@approvalflow/shared';
+import {
+  invokeService,
+  requireRole,
+  TOPICS,
+  type PolicyViolation,
+  type Route,
+} from '@approvalflow/shared';
 import { db } from '../db/client.js';
 import { outbox, submissions } from '../db/schema.js';
 import { validateInvoice } from '../validation.js';
@@ -83,9 +89,10 @@ export async function applySupplement(
   return { status: 'ok', submissionId: submission.id };
 }
 
-export function registerSupplementRoutes(app: FastifyInstance): void {
+export function registerSupplementRoutes(app: FastifyInstance, signingKey: string): void {
   app.patch<{ Params: { id: string }; Body: Record<string, unknown> }>(
     '/api/invoices/:id/supplement',
+    { preHandler: requireRole(signingKey, 'submitter') },
     async (request, reply) => {
       const result = await applySupplement(request.params.id, request.body ?? {});
       switch (result.status) {

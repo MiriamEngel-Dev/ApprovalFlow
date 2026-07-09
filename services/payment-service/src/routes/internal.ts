@@ -8,9 +8,10 @@ import { forceFailureFor } from '../mock-provider.js';
  * fixture that must exercise compensation, rather than relying on randomness.
  *
  * Gated on a shared secret header — this route mutates payment behavior for an arbitrary
- * submissionId, and until nginx/auth (Milestone 11) exist, this service's port is published
- * directly on the host (`docker-compose.yml`), so an unguarded version of this would let anyone
- * who can reach the port force any payment to decline.
+ * submissionId. Since Milestone 11, payment-service's port is no longer published to the host at
+ * all (`docker-compose.yml` — only nginx is), so this is now defense in depth rather than the
+ * only guard; kept as-is since a compose-network-local caller shouldn't be trusted by default
+ * either.
  */
 export function isAuthorizedTestHarnessRequest(headerValue: unknown): boolean {
   const expected = process.env.TEST_HARNESS_SECRET;

@@ -1,5 +1,6 @@
 import { asc, eq } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
+import { requireRole } from '@approvalflow/shared';
 import { db } from '../db/client.js';
 import { auditEvents } from '../db/schema.js';
 
@@ -11,9 +12,10 @@ import { auditEvents } from '../db/schema.js';
  * exist here for a submission whose `DecisionMade` row shows an amount over the configured
  * ceiling — the deterministic router enforced that upstream (decision-service), this is where it's
  * provable after the fact. */
-export function registerAuditRoutes(app: FastifyInstance): void {
+export function registerAuditRoutes(app: FastifyInstance, signingKey: string): void {
   app.get<{ Params: { submissionId: string } }>(
     '/api/audit/:submissionId',
+    { preHandler: requireRole(signingKey, 'approver', 'admin') },
     async (request, reply) => {
       const events = await db
         .select()
