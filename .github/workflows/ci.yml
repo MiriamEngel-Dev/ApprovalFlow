@@ -88,6 +88,20 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # dapr/secrets.json is gitignored (holds real API keys locally) and bind-mounted read-only
+      # into every service by docker-compose.yml — without it here, the mount source is missing
+      # and every service fails to boot (JWT_SIGNING_KEY can't be read, see shared/src/auth.ts),
+      # so the gateway never becomes healthy. LLM_PROVIDER defaults to `stub` in docker-compose.yml
+      # (see .env.example), so LLM_API_KEY is unused here and left blank.
+      - name: Create dapr secrets file for CI
+        run: |
+          cat > dapr/secrets.json <<'JSON'
+          {
+            "LLM_API_KEY": "",
+            "JWT_SIGNING_KEY": "ci-only-signing-key-not-a-real-secret"
+          }
+          JSON
+
       - name: Build all service images
         run: docker compose build
 
