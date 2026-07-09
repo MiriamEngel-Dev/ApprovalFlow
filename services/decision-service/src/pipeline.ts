@@ -1,4 +1,4 @@
-import { eq, max } from 'drizzle-orm';
+import { and, eq, inArray, max } from 'drizzle-orm';
 import {
   createLogger,
   invokeService,
@@ -98,8 +98,26 @@ export async function processInvoiceEvent(
   const assessment = await assessWithFailOpen(provider, normalized, event.correlationId);
   const result = route(normalized, assessment, policy);
 
+  let raceLost = false;
   await db.transaction(async (tx) => {
-    await tx.insert(processedEvents).values({ eventId: event.eventId });
+    // The pre-check above is a cheap optimization for the common redelivery case (skip the LLM
+    // call entirely) — it is not authoritative. Two truly concurrent redeliveries of the same
+    // eventId can both pass it and then both reach this transaction before either commits, so a
+    // plain select-then-insert here still isn't race-proof: both selects can see "not present"
+    // and both inserts then race on the real PK constraint, throwing a raw, uncaught
+    // PostgresError for the loser instead of a clean duplicate-event result (reproduced directly
+    // in pipeline.test.ts's concurrent-redelivery case). `onConflictDoNothing` + `returning` is
+    // the actually-atomic version: whichever insert lands first wins and gets a row back; the
+    // other becomes a no-op and gets none, so `inserted` unambiguously tells us who won.
+    const [inserted] = await tx
+      .insert(processedEvents)
+      .values({ eventId: event.eventId })
+      .onConflictDoNothing({ target: processedEvents.eventId })
+      .returning({ eventId: processedEvents.eventId });
+    if (!inserted) {
+      raceLost = true;
+      return;
+    }
 
     const [existingMax] = await tx
       .select({ maxVersion: max(decisions.version) })
@@ -134,6 +152,15 @@ export async function processInvoiceEvent(
         policySnapshot: policy,
         department: normalized.department,
         amount: normalized.convertedTotal,
+        // F4/F9: the same fields persisted to `decisions` above, also on the wire — without
+        // these, audit-service (a passive subscriber, ARCHITECTURE.md §8) can only ever store
+        // what this payload carries, so a trimmed event silently breaks "the agent's reasoning /
+        // rules applied" half of the audit trail despite `decisions` itself having the data.
+        agentRecommendation: assessment.recommendation,
+        agentConfidence: assessment.confidence,
+        agentReasoning: assessment.reasoning,
+        rulesCited: assessment.rulesCited,
+        violations: result.violations,
       },
       correlationId: event.correlationId,
     });
@@ -180,8 +207,25 @@ export async function processInvoiceEvent(
         payload: { correlationId: event.correlationId, submissionId: event.submissionId, queueId },
         correlationId: event.correlationId,
       });
+    } else {
+      // A re-assessment (after a supplement) resolved to something other than human_review. If
+      // this submission had an existing queue row — most commonly `info_requested`, paused by
+      // requestInfoOnQueueItem — it must be closed out here, or it stays stuck at its old status
+      // forever even though `decisions`/payment already moved on with the new route (F5, F9).
+      // Only touch a row still "in flight" (pending/info_requested) — never overwrite a human's
+      // own approved/rejected decision, and never re-touch an already-superseded row.
+      await tx
+        .update(approvalQueue)
+        .set({ status: 'superseded', resolvedAt: new Date() })
+        .where(
+          and(
+            eq(approvalQueue.submissionId, event.submissionId),
+            inArray(approvalQueue.status, ['pending', 'info_requested']),
+          ),
+        );
     }
   });
 
+  if (raceLost) return { status: 'duplicate-event' };
   return { status: 'processed' };
 }

@@ -73,9 +73,14 @@ export const approvalQueue = pgTable(
   },
   (table) => ({
     submissionUnique: unique('approval_queue_submission_unique').on(table.submissionId),
+    // 'superseded': a re-assessment (after a supplement) resolved this item to a route other than
+    // human_review — the router auto-resolved it, not a human, so it doesn't belong in
+    // 'approved'/'rejected' (those specifically mean a human acted). Without this, a queue item
+    // paused on `info_requested` that a supplement later makes auto_approve-eligible would stay
+    // stuck at `info_requested` forever, even though it was already paid (pipeline.ts).
     statusCheck: check(
       'approval_queue_status_check',
-      sql`${table.status} IN ('pending', 'approved', 'rejected', 'info_requested')`,
+      sql`${table.status} IN ('pending', 'approved', 'rejected', 'info_requested', 'superseded')`,
     ),
   }),
 );

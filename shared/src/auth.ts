@@ -27,7 +27,11 @@ function extractBearerToken(header: string | undefined): string {
 export function verifyToken(header: string | undefined, signingKey: string): AuthClaims {
   const token = extractBearerToken(header);
   try {
-    const payload = jwt.verify(token, signingKey) as jwt.JwtPayload;
+    // Pin the algorithm — without this, jwt.verify accepts whatever algorithm the token itself
+    // declares, which is the classic setup for an algorithm-confusion attack if `signingKey` is
+    // ever used as an asymmetric public key elsewhere. This project's JWTs are self-signed HS256
+    // (a single shared secret, per README/N1), so there's exactly one valid algorithm.
+    const payload = jwt.verify(token, signingKey, { algorithms: ['HS256'] }) as jwt.JwtPayload;
     if (typeof payload.sub !== 'string' || typeof payload.role !== 'string') {
       throw new AuthError('Token missing sub/role claims', 401);
     }

@@ -10,10 +10,45 @@ interface DecisionSummary {
   route: Route;
   violations: PolicyViolation[];
   approval?: {
-    status: 'pending' | 'approved' | 'rejected' | 'info_requested';
+    status: 'pending' | 'approved' | 'rejected' | 'info_requested' | 'superseded';
     approverNote?: string | null;
     requestInfoNote?: string | null;
   };
+}
+
+/** Structural subset of Fastify's/Pino's logger — just what this needs, so a plain test double
+ * works without pulling in either library's exact (and mutually incompatible) Logger type. */
+interface WarnLogger {
+  warn: (obj: object, msg: string) => void;
+}
+
+/**
+ * Exported standalone (not inlined in the route) so the "decision-service unreachable" logging
+ * path is directly testable, same separation as `idempotency.ts`'s `submitInvoice` and
+ * `supplement.ts`'s `applySupplement`.
+ *
+ * Never throws — reported as "no decision yet" either way (a submitter checking status shouldn't
+ * be exposed to internal wiring gaps as a 5xx), but a real outage must not be silent (M14/M15):
+ * without the log line, a genuine decision-service outage is indistinguishable in the logs from
+ * the completely normal "no decision recorded yet" case.
+ */
+export async function lookupDecision(
+  submissionId: string,
+  correlationId: string | undefined,
+  logger: WarnLogger,
+): Promise<DecisionSummary | undefined> {
+  try {
+    return await invokeService<DecisionSummary>(
+      'decision-service',
+      `internal/decisions/by-submission/${submissionId}`,
+    );
+  } catch (err) {
+    logger.warn(
+      { err, correlationId, submissionId },
+      'submissions: could not reach decision-service for status lookup — reporting pending',
+    );
+    return undefined;
+  }
 }
 
 export function registerSubmissionRoutes(app: FastifyInstance): void {
@@ -53,16 +88,7 @@ export function registerSubmissionRoutes(app: FastifyInstance): void {
       return reply.status(404).send({ error: 'Submission not found' });
     }
 
-    let decision: DecisionSummary | undefined;
-    try {
-      decision = await invokeService<DecisionSummary>(
-        'decision-service',
-        `internal/decisions/by-submission/${submission.id}`,
-      );
-    } catch {
-      // decision-service unreachable, or no decision recorded yet — reported as "pending" below,
-      // never a 5xx: a submitter checking status shouldn't be exposed to internal wiring gaps.
-    }
+    const decision = await lookupDecision(submission.id, request.correlationId, request.log);
 
     const route = decision?.route;
     let status: string = route ?? 'pending';

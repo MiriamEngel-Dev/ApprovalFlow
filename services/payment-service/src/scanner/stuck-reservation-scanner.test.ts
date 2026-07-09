@@ -80,7 +80,10 @@ describe('scanForStuckReservations — recovers via a real transaction per row (
       .where(eq(departmentBudgets.department, DEPARTMENT));
     expect(budget?.reserved).toBe('0.00');
 
-    const outboxTopics = (await db.select().from(outbox)).map((r) => r.topic);
+    // Sorted: both rows commit in the same transaction, so DB row order between them is not
+    // guaranteed without an explicit ORDER BY — only that both topics were published, not which
+    // physically landed "first" in an unordered SELECT.
+    const outboxTopics = (await db.select().from(outbox)).map((r) => r.topic).sort();
     expect(outboxTopics).toEqual(['PaymentCompensated', 'PaymentFailed']);
   });
 

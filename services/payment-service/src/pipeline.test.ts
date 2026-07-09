@@ -96,7 +96,10 @@ describe('runPaymentSaga — Journey D: forced payment failure + compensation (M
     const paymentRows = await db.select().from(payments);
     expect(paymentRows).toHaveLength(0);
 
-    const outboxTopics = (await db.select().from(outbox)).map((r) => r.topic);
+    // Sorted: both rows commit in the same transaction, so DB row order between them is not
+    // guaranteed without an explicit ORDER BY — only that both topics were published, not which
+    // physically landed "first" in an unordered SELECT.
+    const outboxTopics = (await db.select().from(outbox)).map((r) => r.topic).sort();
     expect(outboxTopics).toEqual(['PaymentCompensated', 'PaymentFailed']);
   });
 });
@@ -126,6 +129,17 @@ describe('runPaymentSaga — event dedup (M10)', () => {
 
     expect(first.status).toBe('processed');
     expect(second.status).toBe('duplicate-event');
+    expect(await db.select().from(reservations)).toHaveLength(1);
+  });
+
+  it('two truly concurrent redeliveries of the same eventId still produce exactly one reservation', async () => {
+    await seedBudget(1000);
+    const t = trigger({ amount: 100 });
+
+    const [first, second] = await Promise.all([runPaymentSaga(t), runPaymentSaga(t)]);
+
+    const statuses = [first.status, second.status].sort();
+    expect(statuses).toEqual(['duplicate-event', 'processed']);
     expect(await db.select().from(reservations)).toHaveLength(1);
   });
 });

@@ -128,6 +128,7 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:-approvalflow}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme}
       PAYMENT_DB: payment_db
+      TEST_HARNESS_SECRET: ${TEST_HARNESS_SECRET:-change-me-to-a-long-random-string}
     depends_on:
       postgres:
         condition: service_healthy
@@ -150,8 +151,48 @@ services:
     depends_on:
       - payment-service
 
-  # Remaining services + their Dapr sidecars are added here one at a time: audit-service
-  # (Milestone 10), then nginx (Milestone 11) — same pattern as the services above.
+  audit-service:
+    build:
+      context: .
+      dockerfile: services/audit-service/Dockerfile
+    ports:
+      - '3003:3003'
+      # 3504 (Dapr HTTP) published for direct verification during development; removed once
+      # nginx (Milestone 11) becomes the single external entry point (M6). Host-side port differs
+      # from the other services' to avoid a host port clash; each sidecar's own network namespace
+      # still uses 3500 internally (ARCHITECTURE.md §7).
+      - '3504:3500'
+    environment:
+      APP_PORT: '3003'
+      DAPR_HTTP_PORT: '3500'
+      POSTGRES_HOST: postgres
+      POSTGRES_USER: ${POSTGRES_USER:-approvalflow}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme}
+      AUDIT_DB: audit_db
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  audit-service-dapr:
+    image: daprio/daprd:1.14.4
+    command:
+      - './daprd'
+      - '--app-id=audit-service'
+      - '--app-port=3003'
+      - '--dapr-http-port=3500'
+      - '--resources-path=/components'
+      - '--log-level=info'
+    network_mode: 'service:audit-service'
+    volumes:
+      - ./dapr/components:/components
+      - ./dapr/secrets.json:/dapr/secrets.json:ro
+    depends_on:
+      - audit-service
+
+  # Remaining service + its Dapr sidecar is added here: nginx (Milestone 11) — same pattern as
+  # the services above.
 
 volumes:
   postgres-data:

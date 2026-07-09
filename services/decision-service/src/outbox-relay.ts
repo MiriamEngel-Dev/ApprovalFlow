@@ -10,39 +10,42 @@ const logger = createLogger('decision-service');
 const PUBSUB_NAME = 'pubsub';
 const BATCH_SIZE = 50;
 
-interface OutboxRow {
-  id: string;
-  topic: string;
-  payload: unknown;
-  correlationId: string;
-}
-
-/** Thin wrapper around shared/outbox-relay.ts (ADR-005) — same shape as submission-service's. */
+/** Thin wrapper around shared/outbox-relay.ts (ADR-005) — same shape as submission-service's and
+ * payment-service's. The candidate read is unlocked (cheap, no protection needed yet); the real
+ * lock lives inside `claimAndPublish`'s own transaction, held for the duration of the publish —
+ * that's what actually makes this safe across ticks/replicas (ADR-013). */
 export function startDecisionOutboxRelay(): OutboxRelayHandle {
   return startOutboxRelay({
     intervalMs: 1000,
     logger,
-    fetchBatch: async (): Promise<OutboxRow[]> => {
-      const rows = await sql`
-        SELECT id, topic, payload, correlation_id AS "correlationId"
+    fetchCandidateIds: async (): Promise<string[]> => {
+      const rows = await sql<{ id: string }[]>`
+        SELECT id
         FROM outbox
         WHERE published_at IS NULL
         ORDER BY created_at
         LIMIT ${BATCH_SIZE}
-        FOR UPDATE SKIP LOCKED
       `;
-      return rows.map((row) => ({
-        id: row.id as string,
-        topic: row.topic as string,
-        payload: row.payload,
-        correlationId: row.correlationId as string,
-      }));
+      return rows.map((row) => row.id);
     },
-    publish: async (row) => {
-      await publishEvent(PUBSUB_NAME, row.topic, row.payload, row.correlationId);
-    },
-    markPublished: async (id) => {
-      await sql`UPDATE outbox SET published_at = NOW() WHERE id = ${id}`;
+    claimAndPublish: async (id): Promise<void> => {
+      await sql.begin(async (tx) => {
+        const [row] = await tx`
+          SELECT id, topic, payload, correlation_id AS "correlationId"
+          FROM outbox
+          WHERE id = ${id} AND published_at IS NULL
+          FOR UPDATE SKIP LOCKED
+        `;
+        if (!row) return; // already claimed by another tick/replica, or already published
+
+        await publishEvent(
+          PUBSUB_NAME,
+          row.topic as string,
+          row.payload,
+          row.correlationId as string,
+        );
+        await tx`UPDATE outbox SET published_at = NOW() WHERE id = ${id}`;
+      });
     },
   });
 }
