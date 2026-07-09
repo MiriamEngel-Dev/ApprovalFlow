@@ -1,5 +1,5 @@
 import Fastify from 'fastify';
-import { correlationIdPlugin, createLogger } from '@approvalflow/shared';
+import { correlationIdPlugin, createLogger, handleError } from '@approvalflow/shared';
 import { registerHealthRoutes } from './routes/health.js';
 import { registerInternalRoutes } from './routes/internal.js';
 import { registerSubscribers } from './subscribers/index.js';
@@ -32,10 +32,7 @@ async function main(): Promise<void> {
   registerInternalRoutes(app);
   registerSubscribers(app);
 
-  app.setErrorHandler((err, request, reply) => {
-    request.log.error({ err, correlationId: request.correlationId }, 'unhandled error');
-    reply.status(500).send({ error: 'Internal server error' });
-  });
+  app.setErrorHandler(handleError);
 
   await seedBudgetsIfEmpty();
 

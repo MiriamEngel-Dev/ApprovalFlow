@@ -40,3 +40,26 @@ describe('validateInvoice — notes length bound (M15 prompt-injection hardening
     expect(result.valid).toBe(false);
   });
 });
+
+describe('validateInvoice — trims free-text fields (F3 dedup / fixture-lookup safety)', () => {
+  it('trims leading/trailing whitespace from vendor and invoiceNumber', () => {
+    const result = validateInvoice({
+      ...VALID_BODY,
+      vendor: '  Bistro 19  ',
+      invoiceNumber: ' NW-INV-7781\n',
+    });
+    expect(result.valid).toBe(true);
+    if (result.valid) {
+      expect(result.invoice.vendor).toBe('Bistro 19');
+      expect(result.invoice.invoiceNumber).toBe('NW-INV-7781');
+    }
+  });
+
+  it('still rejects a vendor that is only whitespace', () => {
+    const result = validateInvoice({ ...VALID_BODY, vendor: '   ' });
+    expect(result.valid).toBe(false);
+    if (!result.valid) {
+      expect(result.errors.some((e) => e.includes('vendor'))).toBe(true);
+    }
+  });
+});

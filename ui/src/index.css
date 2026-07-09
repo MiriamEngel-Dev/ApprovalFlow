@@ -1,0 +1,294 @@
+:root {
+  --color-bg: #f8f9fa;
+  --color-surface: #ffffff;
+  --color-border: #e2e5e9;
+  --color-text: #1a1d23;
+  --color-text-muted: #6b7280;
+  --color-primary: #4263eb;
+  --color-primary-hover: #364fc7;
+  --color-primary-soft: #edf1ff;
+  --color-success: #2b8a3e;
+  --color-success-soft: #ebfbee;
+  --color-danger: #c92a2a;
+  --color-danger-soft: #fff5f5;
+  --color-warning: #e8590c;
+  --color-warning-soft: #fff4e6;
+  --radius: 10px;
+  --shadow-sm: 0 1px 2px rgba(16, 24, 40, 0.06);
+  --shadow-md: 0 4px 12px rgba(16, 24, 40, 0.08);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-family:
+    -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, Roboto, Helvetica, Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+a {
+  color: var(--color-primary);
+  text-decoration: none;
+}
+a:hover {
+  text-decoration: underline;
+}
+
+h1,
+h2,
+h3 {
+  letter-spacing: -0.01em;
+}
+
+code {
+  background: var(--color-primary-soft);
+  color: var(--color-primary-hover);
+  padding: 0.15em 0.4em;
+  border-radius: 4px;
+  font-size: 0.9em;
+}
+
+/* --- Layout --- */
+
+.app-shell {
+  max-width: 880px;
+  margin: 0 auto;
+  padding: 0 1.5rem 3rem;
+}
+
+.app-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 1.25rem 0;
+  margin-bottom: 2rem;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.app-nav {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.nav-link {
+  padding: 0.5rem 0.9rem;
+  border-radius: 8px;
+  color: var(--color-text);
+  font-weight: 500;
+  font-size: 0.95rem;
+}
+.nav-link:hover {
+  background: var(--color-primary-soft);
+  color: var(--color-primary-hover);
+  text-decoration: none;
+}
+
+.user-chip {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  font-size: 0.9rem;
+  color: var(--color-text-muted);
+}
+
+.user-chip strong {
+  color: var(--color-text);
+}
+
+.login-shell {
+  max-width: 360px;
+  margin: 5rem auto;
+  text-align: center;
+}
+
+.login-shell h1 {
+  font-size: 1.6rem;
+  margin-bottom: 1.75rem;
+}
+
+/* --- Card --- */
+
+.card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-sm);
+  padding: 1.25rem 1.5rem;
+}
+
+.card + .card {
+  margin-top: 0.9rem;
+}
+
+/* --- Forms --- */
+
+.form-grid {
+  display: grid;
+  gap: 1rem;
+  max-width: 480px;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.field label {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--color-text-muted);
+}
+
+.field-check {
+  flex-direction: row;
+  align-items: center;
+  gap: 0.5rem;
+}
+.field-check label {
+  font-weight: 500;
+  color: var(--color-text);
+}
+
+input,
+select,
+textarea {
+  font: inherit;
+  padding: 0.55rem 0.7rem;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: var(--color-surface);
+  color: var(--color-text);
+  width: 100%;
+}
+input:focus,
+select:focus,
+textarea:focus {
+  outline: none;
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 3px var(--color-primary-soft);
+}
+input[type='checkbox'] {
+  width: auto;
+}
+
+/* --- Buttons --- */
+
+button {
+  font: inherit;
+  font-weight: 600;
+  padding: 0.6rem 1.1rem;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  background: var(--color-primary);
+  color: white;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+button:hover:not(:disabled) {
+  background: var(--color-primary-hover);
+}
+button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+button.secondary {
+  background: var(--color-surface);
+  border-color: var(--color-border);
+  color: var(--color-text);
+}
+button.secondary:hover:not(:disabled) {
+  background: var(--color-bg);
+}
+button.danger {
+  background: var(--color-danger);
+}
+button.danger:hover:not(:disabled) {
+  background: #a51111;
+}
+button.link {
+  background: none;
+  color: var(--color-primary);
+  padding: 0;
+  font-weight: 500;
+}
+button.link:hover:not(:disabled) {
+  text-decoration: underline;
+  background: none;
+}
+
+.button-row {
+  display: flex;
+  gap: 0.5rem;
+}
+
+/* --- Status badges --- */
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.25rem 0.65rem;
+  border-radius: 999px;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+.badge-success {
+  background: var(--color-success-soft);
+  color: var(--color-success);
+}
+.badge-warning {
+  background: var(--color-warning-soft);
+  color: var(--color-warning);
+}
+.badge-danger {
+  background: var(--color-danger-soft);
+  color: var(--color-danger);
+}
+.badge-neutral {
+  background: var(--color-primary-soft);
+  color: var(--color-primary-hover);
+}
+
+.error-text {
+  color: var(--color-danger);
+  font-size: 0.9rem;
+}
+
+.muted {
+  color: var(--color-text-muted);
+  font-size: 0.85rem;
+}
+
+/* --- Stat tiles --- */
+
+.tiles {
+  display: flex;
+  gap: 1rem;
+  flex-wrap: wrap;
+  margin-bottom: 1.75rem;
+}
+
+.tile {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  padding: 1rem 1.25rem;
+  min-width: 150px;
+  box-shadow: var(--shadow-sm);
+}
+
+.tile-label {
+  font-size: 0.8rem;
+  color: var(--color-text-muted);
+  margin-bottom: 0.35rem;
+}
+
+.tile-value {
+  font-size: 1.6rem;
+  font-weight: 700;
+}

@@ -182,4 +182,6 @@ export const TOPICS = {
 
 export type Topic = (typeof TOPICS)[keyof typeof TOPICS];
 
-export type Role = 'submitter' | 'approver' | 'admin';
+export const ROLES = ['submitter', 'approver', 'admin'] as const;
+
+export type Role = (typeof ROLES)[number];

@@ -13,7 +13,15 @@ export function validateInvoice(body: unknown): ValidationResult {
   if (typeof body !== 'object' || body === null) {
     return { valid: false, errors: ['Request body must be a JSON object'] };
   }
-  const b = body as Record<string, unknown>;
+  const b = { ...(body as Record<string, unknown>) };
+
+  // Trim free-text fields before validating/storing — a stray leading/trailing space (easy to
+  // introduce via copy-paste) would otherwise silently break the vendor+invoiceNumber+total dedup
+  // match (F3) and the stub/eval fixture lookup (StubProvider keys on exact string equality),
+  // making an already-seen invoice look brand new to both.
+  for (const field of ['vendor', 'invoiceNumber', 'currency', 'department', 'submitter'] as const) {
+    if (typeof b[field] === 'string') b[field] = (b[field] as string).trim();
+  }
 
   if (typeof b.vendor !== 'string' || !b.vendor) errors.push('vendor is required');
   if (typeof b.vendorKnown !== 'boolean') errors.push('vendorKnown must be a boolean');

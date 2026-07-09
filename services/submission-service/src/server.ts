@@ -1,6 +1,12 @@
 import Fastify from 'fastify';
-import { correlationIdPlugin, createLogger, loadJwtSigningKey } from '@approvalflow/shared';
+import {
+  correlationIdPlugin,
+  createLogger,
+  handleError,
+  loadJwtSigningKey,
+} from '@approvalflow/shared';
 import { registerHealthRoutes } from './routes/health.js';
+import { registerAuthRoutes } from './routes/auth.js';
 import { registerSubmissionRoutes } from './routes/submissions.js';
 import { registerSupplementRoutes } from './routes/supplement.js';
 import { registerInternalRoutes } from './routes/internal.js';
@@ -15,14 +21,12 @@ async function main(): Promise<void> {
 
   await app.register(correlationIdPlugin);
   registerHealthRoutes(app);
+  registerAuthRoutes(app, signingKey);
   registerSubmissionRoutes(app, signingKey);
   registerSupplementRoutes(app, signingKey);
   registerInternalRoutes(app);
 
-  app.setErrorHandler((err, request, reply) => {
-    request.log.error({ err, correlationId: request.correlationId }, 'unhandled error');
-    reply.status(500).send({ error: 'Internal server error' });
-  });
+  app.setErrorHandler(handleError);
 
   const relay = startSubmissionOutboxRelay();
 
