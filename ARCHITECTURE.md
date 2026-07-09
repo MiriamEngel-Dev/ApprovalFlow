@@ -579,8 +579,9 @@ A request with a valid signature but the wrong role gets `403`; a missing/invali
 ### Rate Limiting & Resilience (M6, N3)
 
 - **Rate limiting:** nginx — 100 req/min per IP, burst 20, delay 10. Excess returns 429.
-- **Bulkhead:** decision-service limits concurrent LLM calls to 5 (semaphore). Submission intake
-  limited to 50 concurrent requests per instance.
+- **Bulkhead:** not implemented — decision-service places no limit on concurrent LLM calls today.
+  This is the one piece of N3 (Nice-to-Have, not required) left undone; outbox (§7) and nginx rate
+  limiting above are the two-thirds of N3 that are built.
 - **Retries, not circuit breakers:** Dapr resiliency retries 3× (constant 1s interval) on a
   request-level failure — connection error, timeout, or a 5xx/429 response — never on an ordinary
   4xx business response (401/403/404/400 are normal, expected outcomes of a request the service
@@ -610,9 +611,11 @@ and skips what another already holds, safe at any replica count with no added co
 
 ### RAG over Policy (N5)
 
-At startup, decision-service splits `policy.md` by rule_id and embeds chunks in-process
-(`Xenova/all-MiniLM-L6-v2`, no API call). At runtime it queries the top-K=5 relevant rules by
-cosine similarity; if embedding fails, it falls back to the full policy.
+Not yet implemented — decision-service loads the full `policy.md` on every LLM call rather than
+retrieving a relevant subset. `policy.md` is 76 lines, and full-document loading is already the
+documented fallback for a retrieval step, so this was deprioritized behind the Must-Have
+requirements first (see `docs/IMPLEMENTATION-PLAN.md`'s "What to Cut First" list). Planned as a
+later Nice-to-Have pass.
 
 ### OpenTelemetry (N4)
 
