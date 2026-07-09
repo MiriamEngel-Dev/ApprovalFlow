@@ -20,6 +20,13 @@ export interface AuthClaims {
   role: Role;
 }
 
+/** Mirrors `scripts/generate-jwt.js`'s `jwt.sign` call — the UI's login screen (N1) has no real
+ * password/identity to check (this project has none, by design — self-signed role tokens only),
+ * so "login" is just minting a token for the name+role the caller supplied. */
+export function mintToken(sub: string, role: Role, signingKey: string): string {
+  return jwt.sign({ sub, role }, signingKey, { algorithm: 'HS256', expiresIn: '12h' });
+}
+
 export class AuthError extends Error {
   constructor(
     message: string,

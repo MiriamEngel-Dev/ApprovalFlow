@@ -5,3 +5,4 @@ export * from './pino-config.js';
 export * from './auth.js';
 export * from './outbox-relay.js';
 export * from './reason-template.js';
+export * from './error-handler.js';

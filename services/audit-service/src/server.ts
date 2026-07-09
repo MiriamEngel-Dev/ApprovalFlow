@@ -1,9 +1,15 @@
 import Fastify from 'fastify';
-import { correlationIdPlugin, createLogger, loadJwtSigningKey } from '@approvalflow/shared';
+import {
+  correlationIdPlugin,
+  createLogger,
+  handleError,
+  loadJwtSigningKey,
+} from '@approvalflow/shared';
 import { registerHealthRoutes } from './routes/health.js';
 import { registerAuditRoutes } from './routes/audit.js';
 import { registerDashboardRoutes } from './routes/dashboard.js';
 import { registerNotificationRoutes } from './routes/notifications.js';
+import { registerInternalRoutes } from './routes/internal.js';
 import { registerCatchAllSubscriber } from './subscribers/catch-all.js';
 
 const logger = createLogger('audit-service');
@@ -33,12 +39,10 @@ async function main(): Promise<void> {
   registerAuditRoutes(app, signingKey);
   registerDashboardRoutes(app, signingKey);
   registerNotificationRoutes(app, signingKey);
+  registerInternalRoutes(app);
   registerCatchAllSubscriber(app);
 
-  app.setErrorHandler((err, request, reply) => {
-    request.log.error({ err, correlationId: request.correlationId }, 'unhandled error');
-    reply.status(500).send({ error: 'Internal server error' });
-  });
+  app.setErrorHandler(handleError);
 
   // Passive subscriber only (ARCHITECTURE.md §8) — never publishes, so no outbox relay to start,
   // unlike the other three services.
