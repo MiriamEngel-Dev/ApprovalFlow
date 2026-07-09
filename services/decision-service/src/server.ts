@@ -1,5 +1,5 @@
 import Fastify from 'fastify';
-import { correlationIdPlugin, createLogger } from '@approvalflow/shared';
+import { correlationIdPlugin, createLogger, loadJwtSigningKey } from '@approvalflow/shared';
 import { registerHealthRoutes } from './routes/health.js';
 import { registerInternalRoutes } from './routes/internal.js';
 import { registerPolicyRoutes } from './routes/policy.js';
@@ -15,6 +15,7 @@ const PORT = Number(process.env.APP_PORT ?? 3001);
 async function main(): Promise<void> {
   const app = Fastify({ logger: true });
   const provider = await createProvider();
+  const signingKey = await loadJwtSigningKey();
 
   // Dapr's pub/sub HTTP delivery POSTs each event as `Content-Type: application/cloudevents+json`
   // (CloudEvents 1.0), which Fastify's built-in JSON parser doesn't recognize by default (only
@@ -35,9 +36,9 @@ async function main(): Promise<void> {
   await app.register(correlationIdPlugin);
   registerHealthRoutes(app);
   registerInternalRoutes(app);
-  registerPolicyRoutes(app);
-  registerQueueRoutes(app);
-  registerApprovalRoutes(app);
+  registerPolicyRoutes(app, signingKey);
+  registerQueueRoutes(app, signingKey);
+  registerApprovalRoutes(app, signingKey);
   registerEventRoutes(app, provider);
 
   app.setErrorHandler((err, request, reply) => {

@@ -27,13 +27,15 @@ Building blocks used:
 - **State Store** (Redis) — idempotency keys, processed event cache, budget locks, policy cache
 - **Secrets** (local file) — LLM API key, JWT signing key
 - **Configuration** — hot-reloaded policy thresholds
-- **Resiliency** — timeouts (10s–30s), retries (3×), circuit breakers (5 failures → 60s open)
+- **Resiliency** — timeouts (10s–30s), retries (3×, scoped to 5xx/429/connection failures only —
+  no circuit breaker; see ARCHITECTURE.md §10 for why Dapr's can't safely sit on top of an API
+  that returns ordinary 4xx responses)
 
 ## Consequences
 
 **Positive:**
 - **mTLS** — all service-to-service traffic is encrypted without application code changes.
-- **Resiliency** — per-path timeout, retry, and circuit breaker declared in YAML, not code.
+- **Resiliency** — per-path timeout and retry declared in YAML, not code.
 - **Observability** — Dapr emits trace spans for every invocation. Correlation IDs
   propagate via CloudEvents.
 - **Service discovery** — Dapr sidecars handle it; apps only know app-ids

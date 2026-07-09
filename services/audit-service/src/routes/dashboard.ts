@@ -1,4 +1,5 @@
 import type { FastifyInstance } from 'fastify';
+import { requireRole } from '@approvalflow/shared';
 import { sql } from '../db/client.js';
 
 interface RouteCountRow {
@@ -65,6 +66,10 @@ export async function getDashboardStats(): Promise<DashboardStats> {
   };
 }
 
-export function registerDashboardRoutes(app: FastifyInstance): void {
-  app.get('/api/dashboard', async (_request, reply) => reply.send(await getDashboardStats()));
+export function registerDashboardRoutes(app: FastifyInstance, signingKey: string): void {
+  app.get(
+    '/api/dashboard',
+    { preHandler: requireRole(signingKey, 'approver', 'admin') },
+    async (_request, reply) => reply.send(await getDashboardStats()),
+  );
 }

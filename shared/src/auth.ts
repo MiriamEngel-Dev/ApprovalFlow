@@ -1,6 +1,19 @@
 import jwt from 'jsonwebtoken';
 import type { FastifyReply, FastifyRequest } from 'fastify';
+import { getSecret } from './dapr-client.js';
 import type { Role } from './types.js';
+
+const SECRET_STORE = 'local-secret-store';
+
+/** Mirrors decision-service's `LLM_API_KEY` idiom (`providers/index.ts`) — every service that
+ * verifies JWTs (N1) fetches the same shared signing key from the local Dapr secret store at
+ * startup, rather than each hardcoding or re-deriving it. */
+export async function loadJwtSigningKey(): Promise<string> {
+  const secret = await getSecret(SECRET_STORE, 'JWT_SIGNING_KEY');
+  const key = secret.JWT_SIGNING_KEY;
+  if (!key) throw new Error('JWT_SIGNING_KEY secret is empty');
+  return key;
+}
 
 export interface AuthClaims {
   sub: string;

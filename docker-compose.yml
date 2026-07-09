@@ -33,11 +33,11 @@ services:
     build:
       context: .
       dockerfile: services/submission-service/Dockerfile
-    ports:
-      - '3000:3000'
-      # 3500 (Dapr HTTP) published for direct verification during development; removed once
-      # nginx (Milestone 11) becomes the single external entry point (M6).
-      - '3500:3500'
+    # Not published to the host — nginx (Milestone 11) is the single external entry point (M6);
+    # only reachable on the Compose network (by other containers, including nginx).
+    expose:
+      - '3000'
+      - '3500'
     environment:
       APP_PORT: '3000'
       DAPR_HTTP_PORT: '3500'
@@ -52,7 +52,7 @@ services:
         condition: service_healthy
 
   submission-service-dapr:
-    image: daprio/daprd:1.14.4
+    image: daprio/daprd:1.18.0
     command:
       - './daprd'
       - '--app-id=submission-service'
@@ -71,13 +71,11 @@ services:
     build:
       context: .
       dockerfile: services/decision-service/Dockerfile
-    ports:
-      - '3001:3001'
-      # 3502 (Dapr HTTP) published for direct verification during development; removed once
-      # nginx (Milestone 11) becomes the single external entry point (M6). Host-side port differs
-      # from submission-service's 3500 to avoid a host port clash; each sidecar's own network
-      # namespace still uses 3500 internally (ARCHITECTURE.md §7).
-      - '3502:3500'
+    # Not published to the host — nginx (Milestone 11) is the single external entry point (M6);
+    # only reachable on the Compose network (by other containers, including nginx).
+    expose:
+      - '3001'
+      - '3500'
     environment:
       APP_PORT: '3001'
       DAPR_HTTP_PORT: '3500'
@@ -95,7 +93,7 @@ services:
         condition: service_healthy
 
   decision-service-dapr:
-    image: daprio/daprd:1.14.4
+    image: daprio/daprd:1.18.0
     command:
       - './daprd'
       - '--app-id=decision-service'
@@ -114,13 +112,12 @@ services:
     build:
       context: .
       dockerfile: services/payment-service/Dockerfile
-    ports:
-      - '3002:3002'
-      # 3503 (Dapr HTTP) published for direct verification during development; removed once
-      # nginx (Milestone 11) becomes the single external entry point (M6). Host-side port differs
-      # from the other services' to avoid a host port clash; each sidecar's own network namespace
-      # still uses 3500 internally (ARCHITECTURE.md §7).
-      - '3503:3500'
+    # Not published to the host. nginx never calls payment-service directly (only reached via
+    # decision-service's saga trigger and pub/sub — ARCHITECTURE.md §2 Communication Map), but
+    # this stays consistent with the other 3 services: only reachable on the Compose network.
+    expose:
+      - '3002'
+      - '3500'
     environment:
       APP_PORT: '3002'
       DAPR_HTTP_PORT: '3500'
@@ -136,7 +133,7 @@ services:
         condition: service_healthy
 
   payment-service-dapr:
-    image: daprio/daprd:1.14.4
+    image: daprio/daprd:1.18.0
     command:
       - './daprd'
       - '--app-id=payment-service'
@@ -155,13 +152,11 @@ services:
     build:
       context: .
       dockerfile: services/audit-service/Dockerfile
-    ports:
-      - '3003:3003'
-      # 3504 (Dapr HTTP) published for direct verification during development; removed once
-      # nginx (Milestone 11) becomes the single external entry point (M6). Host-side port differs
-      # from the other services' to avoid a host port clash; each sidecar's own network namespace
-      # still uses 3500 internally (ARCHITECTURE.md §7).
-      - '3504:3500'
+    # Not published to the host — nginx (Milestone 11) is the single external entry point (M6);
+    # only reachable on the Compose network (by other containers, including nginx).
+    expose:
+      - '3003'
+      - '3500'
     environment:
       APP_PORT: '3003'
       DAPR_HTTP_PORT: '3500'
@@ -176,7 +171,7 @@ services:
         condition: service_healthy
 
   audit-service-dapr:
-    image: daprio/daprd:1.14.4
+    image: daprio/daprd:1.18.0
     command:
       - './daprd'
       - '--app-id=audit-service'
@@ -191,8 +186,21 @@ services:
     depends_on:
       - audit-service
 
-  # Remaining service + its Dapr sidecar is added here: nginx (Milestone 11) — same pattern as
-  # the services above.
+  # nginx (Milestone 11) — the single external entry point (M6): rate-limiting, CORS,
+  # correlation-id injection, JWT passthrough. No Dapr sidecar of its own — it calls each
+  # service's sidecar directly by container name (ARCHITECTURE.md §7), so it only needs to share
+  # the Compose network, not a `network_mode: 'service:...'` pairing like the app+sidecar blocks
+  # above. The only service in this file that publishes a host port.
+  nginx:
+    image: nginx:alpine
+    ports:
+      - '${NGINX_PORT:-8080}:8080'
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - submission-service
+      - decision-service
+      - audit-service
 
 volumes:
   postgres-data:

@@ -1,5 +1,5 @@
 import Fastify from 'fastify';
-import { correlationIdPlugin, createLogger } from '@approvalflow/shared';
+import { correlationIdPlugin, createLogger, loadJwtSigningKey } from '@approvalflow/shared';
 import { registerHealthRoutes } from './routes/health.js';
 import { registerSubmissionRoutes } from './routes/submissions.js';
 import { registerSupplementRoutes } from './routes/supplement.js';
@@ -11,11 +11,12 @@ const PORT = Number(process.env.APP_PORT ?? 3000);
 
 async function main(): Promise<void> {
   const app = Fastify({ logger: true });
+  const signingKey = await loadJwtSigningKey();
 
   await app.register(correlationIdPlugin);
   registerHealthRoutes(app);
-  registerSubmissionRoutes(app);
-  registerSupplementRoutes(app);
+  registerSubmissionRoutes(app, signingKey);
+  registerSupplementRoutes(app, signingKey);
   registerInternalRoutes(app);
 
   app.setErrorHandler((err, request, reply) => {
