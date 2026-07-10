@@ -1,9 +1,5 @@
 # ApprovalFlow — Invoice & Expense Approval Platform
 
-> Status: under active development. This README is a scaffold — see
-> [docs/IMPLEMENTATION-PLAN.md](docs/IMPLEMENTATION-PLAN.md) (Milestone 15) for what's still to be
-> filled in.
-
 A microservice-based, AI-assisted platform that automates invoice and expense approvals: an AI
 agent assesses each submission against a configurable company policy, a deterministic router
 auto-approves the low-risk majority within a provable ceiling, and escalates everything else to a
@@ -20,32 +16,122 @@ human approver. Every decision is fully auditable.
 
 ## Overview
 
-TODO (Milestone 15): one-paragraph product summary, the autonomy dilemma and chosen posture
-(link to [docs/PRODUCT-DILEMMA.md](docs/PRODUCT-DILEMMA.md)).
+The core product tension: an autonomy ceiling of $0 is trivially "safe" but useless — every item
+hits a human and nothing is automated. A ceiling matching the highest policy limit maximizes
+automation but risks a single high-value item slipping through on a wrong AI call. ApprovalFlow
+resolves this with **the agent recommends, the router decides**: the LLM produces a structured
+recommendation (approve/review/reject, confidence, cited policy rules, violations), but a separate,
+pure-TypeScript, unit-tested **deterministic router** is the only code path that can actually
+produce `auto_approve`. It enforces a $250 autonomy ceiling, an 0.80 confidence floor, and a set of
+hard stops (new vendor, currency mismatch, math mismatch, missing receipt, alcohol-only) that no
+amount of AI confidence — or adversarial prompting in the invoice notes — can override. The full
+reasoning behind the $250 figure, including a fixture-by-fixture walkthrough of why $100 and $500
+were both rejected, is in [docs/PRODUCT-DILEMMA.md](docs/PRODUCT-DILEMMA.md).
+
+Every submission produces a complete, replayable audit trail (correlation-id-linked events across
+all four services), and money only moves through a saga (reserve → execute → confirm/compensate)
+that fails safe: a payment failure after approval automatically reverses the budget reservation
+rather than leaving it stuck.
 
 ## Architecture
 
-See [ARCHITECTURE.md](ARCHITECTURE.md) for the full system design, sequence diagrams, and payment
-saga/compensation flow. Key decisions are recorded as ADRs under [docs/ADR/](docs/ADR/ADR.md).
+```mermaid
+graph TD
+    subgraph "Docker Compose"
+        NGINX["nginx :8080<br/>rate-limiting · CORS"]
+        SUB["submission-service :3000"] --- SUB_D["dapr-sidecar"]
+        DEC["decision-service :3001"] --- DEC_D["dapr-sidecar"]
+        PAY["payment-service :3002"] --- PAY_D["dapr-sidecar"]
+        AUDIT["audit-service :3003"] --- AUDIT_D["dapr-sidecar"]
+        REDIS[("Redis :6379")]
+        PG[("PostgreSQL :5432")]
+    end
+    UI["ui :5173<br/>(run separately, outside compose)"]
 
-TODO (Milestone 15): embed/link the top-level system diagram here.
+    Internet --> NGINX
+    NGINX --> SUB_D & DEC_D & PAY_D & AUDIT_D
+    SUB_D & DEC_D & PAY_D & AUDIT_D --> REDIS
+    SUB_D & DEC_D & PAY_D & AUDIT_D --> PG
+    UI --> NGINX
+```
+
+Four microservices, each with its own Dapr sidecar and its own slice of the schema — no service
+touches another's tables directly:
+
+| Service | Responsibility |
+|---|---|
+| **nginx** | Single external entry point. Rate-limiting, CORS, correlation-id injection, JWT pass-through. |
+| **submission-service** | Accepts invoices asynchronously, dedup (F3), outbox relay. |
+| **decision-service** | LLM assessment + the deterministic router (only path to `auto_approve`), HITL approval queue. |
+| **payment-service** | Saga orchestration (reserve → execute → confirm/compensate), budget row-locking. |
+| **audit-service** | Passive subscriber — full audit trail, dashboard stats, notification log. |
+
+See [ARCHITECTURE.md](ARCHITECTURE.md) for the full system design, sequence diagrams, state
+machines, and the payment saga/compensation flow in detail. Key decisions are recorded as ADRs
+under [docs/ADR/ADR.md](docs/ADR/ADR.md) — notably the $250 autonomy ceiling (ADR-001), Dapr as the
+service mesh (ADR-002), and saga over 2PC for payments (ADR-003).
 
 ## Technologies used
 
-TODO (Milestone 15): table of runtime/language/framework/db/infra choices (see ARCHITECTURE.md §1).
+| Layer | Choice |
+|---|---|
+| Runtime | Node.js ≥20 LTS |
+| Language | TypeScript ≥5.5, strict mode |
+| HTTP framework | Fastify ≥5 |
+| ORM | Drizzle ≥0.36 |
+| Database | PostgreSQL ≥16 |
+| Pub/Sub, state, cache | Redis ≥7 |
+| Service mesh | Dapr ≥1.14 (HTTP API, no SDK) |
+| Gateway | nginx |
+| Container runtime | Docker + Docker Compose |
+| LLM provider | Gemini 2.0 Flash or OpenRouter (swappable via env var — see `.env.example`); deterministic stub provider for CI/eval |
+| UI | React + Vite (minimal SPA) |
+| Testing | Vitest ≥2 |
 
 ## Running locally
 
-TODO (Milestone 15):
+From a fresh clone:
 
 ```bash
+npm install
 cp .env.example .env
+cp dapr/secrets.json.example dapr/secrets.json   # fill in a real LLM_API_KEY only if LLM_PROVIDER≠stub
 docker compose up
 ```
 
+This starts all 4 services + their Dapr sidecars + PostgreSQL + Redis + nginx (12 containers).
+The gateway is then live at `http://localhost:8080` (`GET /health` to confirm), and
+`npm run verify` (below) is ready to run against it.
+
+The UI runs separately, outside docker compose, talking to the gateway above:
+
+```bash
+npm run dev -w ui
+```
+
+Then open `http://localhost:5173`. The login screen mints a self-signed role token (name + role —
+see [docs/ADR/ADR.md](docs/ADR/ADR.md) for why this project has no real identity provider) rather
+than a real username/password.
+
 ## Testing & verification
 
-TODO (Milestone 15): `npm test`, `npm run test:integration`, `npm run verify`, `npm run eval`.
+```bash
+npm test               # unit + integration tests, per service (vitest)
+npm run lint            # eslint
+npm run format          # prettier --check
+npm run typecheck       # tsc across every workspace + scripts/
+
+npm run verify           # one-command, end-to-end acceptance gate (D5) — requires the
+                          # docker compose cluster above to be running; exercises Journeys
+                          # A/B/C/D and the anti-cheese guards against the real gateway API
+```
+
+`npm run eval` (an automated eval harness over the fixture set, B1) is not yet built — it's Bonus,
+not required — so it isn't listed above as a working command yet.
+
+`npm run verify` is also what CI's `verify` job runs against a freshly built cluster on every
+push/PR (`.github/workflows/ci.yml`) — it's the same acceptance bar locally and in CI, not a
+separate "trust me" check.
 
 ## Documentation
 
