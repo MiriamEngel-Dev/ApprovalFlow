@@ -58,13 +58,13 @@ graph TD
 Four microservices, each with its own Dapr sidecar and its own slice of the schema — no service
 touches another's tables directly:
 
-| Service | Responsibility |
-|---|---|
-| **nginx** | Single external entry point. Rate-limiting, CORS, correlation-id injection, JWT pass-through. |
-| **submission-service** | Accepts invoices asynchronously, dedup (F3), outbox relay. |
-| **decision-service** | LLM assessment + the deterministic router (only path to `auto_approve`), HITL approval queue. |
-| **payment-service** | Saga orchestration (reserve → execute → confirm/compensate), budget row-locking. |
-| **audit-service** | Passive subscriber — full audit trail, dashboard stats, notification log. |
+| Service                | Responsibility                                                                                |
+| ---------------------- | --------------------------------------------------------------------------------------------- |
+| **nginx**              | Single external entry point. Rate-limiting, CORS, correlation-id injection, JWT pass-through. |
+| **submission-service** | Accepts invoices asynchronously, dedup (F3), outbox relay.                                    |
+| **decision-service**   | LLM assessment + the deterministic router (only path to `auto_approve`), HITL approval queue. |
+| **payment-service**    | Saga orchestration (reserve → execute → confirm/compensate), budget row-locking.              |
+| **audit-service**      | Passive subscriber — full audit trail, dashboard stats, notification log.                     |
 
 See [ARCHITECTURE.md](ARCHITECTURE.md) for the full system design, sequence diagrams, state
 machines, and the payment saga/compensation flow in detail. Key decisions are recorded as ADRs
@@ -73,20 +73,20 @@ service mesh (ADR-002), and saga over 2PC for payments (ADR-003).
 
 ## Technologies used
 
-| Layer | Choice |
-|---|---|
-| Runtime | Node.js ≥20 LTS |
-| Language | TypeScript ≥5.5, strict mode |
-| HTTP framework | Fastify ≥5 |
-| ORM | Drizzle ≥0.36 |
-| Database | PostgreSQL ≥16 |
-| Pub/Sub, state, cache | Redis ≥7 |
-| Service mesh | Dapr ≥1.14 (HTTP API, no SDK) |
-| Gateway | nginx |
-| Container runtime | Docker + Docker Compose |
-| LLM provider | Gemini 2.0 Flash or OpenRouter (swappable via env var — see `.env.example`); deterministic stub provider for CI/eval |
-| UI | React + Vite (minimal SPA) |
-| Testing | Vitest ≥2 |
+| Layer                 | Choice                                                                                                               |
+| --------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| Runtime               | Node.js ≥20 LTS                                                                                                      |
+| Language              | TypeScript ≥5.5, strict mode                                                                                         |
+| HTTP framework        | Fastify ≥5                                                                                                           |
+| ORM                   | Drizzle ≥0.36                                                                                                        |
+| Database              | PostgreSQL ≥16                                                                                                       |
+| Pub/Sub, state, cache | Redis ≥7                                                                                                             |
+| Service mesh          | Dapr ≥1.14 (HTTP API, no SDK)                                                                                        |
+| Gateway               | nginx                                                                                                                |
+| Container runtime     | Docker + Docker Compose                                                                                              |
+| LLM provider          | Gemini 2.0 Flash or OpenRouter (swappable via env var — see `.env.example`); deterministic stub provider for CI/eval |
+| UI                    | React + Vite (minimal SPA)                                                                                           |
+| Testing               | Vitest ≥2                                                                                                            |
 
 ## Running locally
 

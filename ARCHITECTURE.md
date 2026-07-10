@@ -53,7 +53,7 @@ Each service maps to a distinct **volatility area** — the reason it would chan
 | Pub/Sub, State, Cache | Redis ≥7 |
 | Service mesh | Dapr ≥1.14 (HTTP API — no SDK) |
 | Container runtime | Docker + Docker Compose |
-| LLM provider | Gemini 2.0 Flash (swappable via env var; stub provider for CI/eval) |
+| LLM provider | Gemini 2.0 Flash or OpenRouter (swappable via `LLM_PROVIDER` env var); stub provider for CI/eval |
 | UI | React + Vite (minimal SPA) |
 | Testing | Vitest ≥2 |
 
@@ -520,9 +520,10 @@ HTTP header (Dapr invoke) and CloudEvent extension (pub/sub).
 
 ### LLM Provider — Swappable & Fail-Open (M15)
 
-The agent interface is abstract — `GeminiProvider` (production) and `StubProvider` (CI/eval,
-fixture-ID→pre-mapped response), selected via `LLM_PROVIDER`. On any provider error: confidence=0,
-logged with correlationId, router escalates to human. Never swallowed, never defaults to approve.
+The agent interface is abstract — `GeminiProvider` and `OpenRouterProvider` (both production,
+either selectable) and `StubProvider` (CI/eval, fixture-ID→pre-mapped response), selected via
+`LLM_PROVIDER`. On any provider error: confidence=0, logged with correlationId, router escalates
+to human. Never swallowed, never defaults to approve.
 
 ### Policy Snapshot per Decision (F9, F10)
 

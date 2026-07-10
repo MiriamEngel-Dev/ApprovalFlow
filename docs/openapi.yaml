@@ -78,7 +78,7 @@ paths:
                 properties:
                   token:
                     type: string
-                    description: "HS256 JWT, 12h expiry, claims: sub=name, role=role."
+                    description: 'HS256 JWT, 12h expiry, claims: sub=name, role=role.'
         '400':
           $ref: '#/components/responses/BadRequest'
 
