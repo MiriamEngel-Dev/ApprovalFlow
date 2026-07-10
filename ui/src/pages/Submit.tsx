@@ -2,19 +2,31 @@ import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import type { Category } from '@approvalflow/shared';
 import { submit, ApiError, type SubmitResponse } from '../api.js';
+import { getToken, decodeToken } from '../auth.js';
+import { badgeClassFor } from '../statusBadge.js';
 
 const CATEGORIES: Category[] = ['meals', 'saas', 'travel', 'hardware', 'other'];
 
 // F1: the practical subset of Invoice needed for a usable form — the backend's validation.ts is
 // the real gate, this is just enough to not send obviously-broken input.
 export function Submit() {
+  // GET /api/submissions/mine matches on exact equality against the logged-in JWT's `sub` — a
+  // free-text Submitter field independent of the login identity meant those two could silently
+  // diverge (e.g. logging in as "dana.cohen" but typing "dana.cohen@northwind.example" here),
+  // making a submitter's own items invisible to their own "My submissions" list. Deriving it from
+  // the session instead of asking for it closes that gap structurally rather than by convention.
+  const claims = (() => {
+    const token = getToken();
+    return token ? decodeToken(token) : null;
+  })();
+  const submitter = claims?.sub ?? '';
+
   const [vendor, setVendor] = useState('');
   const [vendorKnown, setVendorKnown] = useState(true);
   const [invoiceNumber, setInvoiceNumber] = useState('');
   const [currency, setCurrency] = useState('USD');
   const [category, setCategory] = useState<Category>('other');
   const [department, setDepartment] = useState('');
-  const [submitter, setSubmitter] = useState('');
   const [description, setDescription] = useState('');
   const [quantity, setQuantity] = useState('1');
   const [unitPrice, setUnitPrice] = useState('');
@@ -70,17 +82,26 @@ export function Submit() {
   };
 
   if (result) {
+    const isDuplicate = result.status === 'duplicate';
     return (
       <div className="card" style={{ maxWidth: 480 }}>
-        <h2>Submitted</h2>
+        <h2>{isDuplicate ? 'Duplicate detected' : 'Submitted'}</h2>
+        {isDuplicate && (
+          <p>
+            <span className={`badge ${badgeClassFor('duplicate')}`}>rejected as duplicate</span>
+          </p>
+        )}
         <p>
           Tracking ID: <code>{result.trackingId}</code>
         </p>
         <p>
           Correlation ID: <code>{result.correlationId}</code>
         </p>
-        {result.status === 'duplicate' && (
-          <p className="muted">This looks like a duplicate of a prior submission.</p>
+        {isDuplicate && (
+          <p>
+            This receipt already exists in the system — the same vendor, invoice number, and total
+            were already submitted earlier, so this one was not processed again.
+          </p>
         )}
         <div className="button-row" style={{ marginTop: '1rem' }}>
           <Link to={`/status/${result.trackingId}`}>
@@ -170,7 +191,7 @@ export function Submit() {
         </div>
         <div className="field">
           <label>Submitter</label>
-          <input value={submitter} onChange={(e) => setSubmitter(e.target.value)} required />
+          <input value={submitter} disabled readOnly />
         </div>
         <div className="field">
           <label>Line item description</label>
