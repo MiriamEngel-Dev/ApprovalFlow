@@ -1,36 +1,34 @@
 # ADR-009: Database-per-service over shared database
 
-**Context:** Four services need persistent storage. A shared PostgreSQL database
-simplifies queries and transactions but couples services. Dedicated databases per service
-provide isolation but add operational complexity.
+**Context:** The four services all need persistent storage. A single shared PostgreSQL database
+would make cross-service queries and transactions trivial, but it also couples the services
+together in exactly the way a microservice architecture is supposed to avoid. Fully separate
+databases per service give real isolation but add operational weight.
 
-**Decision:** **Shared PostgreSQL instance, separate databases per service** (logical
-isolation, not physical). Each service connects to its own database: `submission_db`,
-`decision_db`, `payment_db`, `audit_db`. No cross-database queries or FKs.
+**Decision:** One shared PostgreSQL instance, but a separate logical database per service —
+`submission_db`, `decision_db`, `payment_db`, `audit_db` — with no cross-database queries and no
+foreign keys between them.
 
-**Rationale:**
-- Satisfies M3 (microservices) and M4 (single `docker compose up`) simultaneously —
-  one PostgreSQL container with 4 databases is operationally simple while logically
-  separated
-- No cross-service FK constraints — referential integrity enforced at the application
-  layer (e.g., `submission_id` in `approval_queue` is validated by decision-service
-  fetching from submission-service)
-- Each service's schema evolves independently — no migration coordination
-- Audit trail is physically separate — auditors can query `audit_db` without impacting
-  operational services
+**Rationale:** This satisfies both M3 (real microservices) and M4 (one `docker compose up`) at the
+same time — a single PostgreSQL container running four databases is operationally simple while
+still being logically separated. There are no cross-service foreign key constraints; referential
+integrity that spans services is enforced at the application layer instead — decision-service, for
+instance, validates a `submission_id` by fetching it from submission-service rather than trusting a
+database-level FK that shouldn't exist across a service boundary anyway. Each service's schema can
+also evolve on its own timeline with no migration coordination needed, and the audit database sits
+physically apart from the operational ones, so auditors can query it without touching anything that
+affects live traffic.
 
-**Alternatives considered:**
-- Single shared database: Simpler migrations, cross-service JOINs and transactions
-  possible. Rejected because it creates tight coupling — a schema change in one service
-  can break another, and shared transactions enable accidental cross-service consistency
-  that wouldn't survive a service split.
-- Separate PostgreSQL containers per service: Maximum isolation. Rejected because 4
-  PostgreSQL containers in Docker Compose are heavy, and we're optimizing for dev/test
-  experience per M4.
+A single shared database was the obvious alternative — simpler migrations, and cross-service joins
+and transactions become trivial — but that's exactly the coupling this design is trying to avoid: a
+schema change in one service could break another, and shared transactions make it easy to build
+cross-service consistency that would never survive an actual service split. Fully separate
+PostgreSQL containers per service would give maximum isolation, but four PostgreSQL containers in
+Docker Compose is heavier than it needs to be, and the priority here (per M4) is a smooth dev/test
+experience.
 
-**Consequences:**
-- ✅ One PostgreSQL container to manage
-- ✅ Logical separation — services cannot accidentally query another's tables
-- ✅ Audit database is physically separate for compliance
-- ⚠️ Cannot enforce referential integrity across services at DB level (by design)
-- ⚠️ Must configure 4 databases in `docker-entrypoint.sh` or init script
+**Consequences:** Only one PostgreSQL container to manage, real logical separation so no service
+can accidentally reach into another's tables, and a physically separate audit database for
+compliance purposes. The tradeoff is that referential integrity across services can't be enforced
+at the database level — that's by design, not an oversight — and the init script has to set up all
+four databases.

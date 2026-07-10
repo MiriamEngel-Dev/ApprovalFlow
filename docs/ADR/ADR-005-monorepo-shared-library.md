@@ -1,21 +1,22 @@
 # ADR-005: Monorepo with shared library
 
-**Context:** Four microservices need shared types (Invoice, AgentAssessment, Decision,
-SagaState, Route), a Dapr HTTP client wrapper, correlation-ID propagation, and a
-structured-logging configuration. Copy-pasting these across services creates drift.
+**Context:** The four services all need the same set of types (`Invoice`, `AgentAssessment`,
+`Decision`, `SagaState`, `Route`), plus a Dapr HTTP client wrapper, correlation-id propagation, and
+the same structured-logging setup. Copy-pasting that across four separate repos is exactly how
+they'd quietly drift apart from each other.
 
-**Decision:** Single monorepo with:
-- `services/{submission,decision,payment,audit}-service/` — independent deployable units
-- `shared/` — internal package with `types.ts`, `dapr-client.ts`, `correlation-id.ts`,
-  `pino-config.ts`
-- npm workspaces (or TypeScript project references) to resolve `@approvalflow/shared`
+**Decision:** One monorepo. `services/{submission,decision,payment,audit}-service/` are the
+independently deployable units, and `shared/` is an internal package holding `types.ts`,
+`dapr-client.ts`, `correlation-id.ts`, and `pino-config.ts`, resolved across the workspace via npm
+workspaces.
 
-Each service has its own `package.json`, `Dockerfile`, `tsconfig.json`, and Drizzle schema.
-Shared code has zero dependencies on any service. No shared database objects.
+Each service still keeps its own `package.json`, `Dockerfile`, `tsconfig.json`, and Drizzle schema.
+The shared package has zero dependencies on any individual service, and there's no shared database
+object anywhere.
 
-**Consequences:**
-- ✅ Single source of truth for API contracts (types) and Dapr interaction patterns
-- ✅ CI catches breakage across services on every push (TypeScript compilation verifies
-  all consumers)
-- ⚠️ Shared package changes affect all services — must be backward-compatible
-- ⚠️ npm workspaces add tooling complexity vs. relative imports (chosen for cleanliness)
+**Consequences:** There's a single source of truth for API contracts and Dapr interaction
+patterns, and CI catches any cross-service breakage on every push since TypeScript compilation
+checks every consumer of the shared package. The tradeoff is that a change to `shared/` touches
+every service at once, so it has to stay backward-compatible, and npm workspaces add a little
+tooling overhead compared to plain relative imports — worth it here for how much cleaner the
+result is.

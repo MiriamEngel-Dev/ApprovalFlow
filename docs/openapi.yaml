@@ -3,16 +3,899 @@ info:
   title: ApprovalFlow API
   description: >
     Invoice & Expense Approval Platform — single external entry point (nginx, port 8080).
-    Full endpoint documentation is filled in as each service is implemented
-    (see docs/IMPLEMENTATION-PLAN.md, Milestone 15).
+    Every route below is reached through the gateway; nginx forwards to the owning service's
+    Dapr sidecar with no path rewriting, so the paths shown here are exactly what a client calls.
+    Bearer tokens are self-signed JWTs (N1) minted by POST /api/auth/login — there is no real
+    identity provider in this system by design (see docs/ADR/ADR.md).
   version: 0.1.0
 servers:
   - url: http://localhost:8080
     description: Local docker compose
-paths: {}
+security:
+  - bearerAuth: []
+paths:
+  /health:
+    get:
+      summary: Gateway liveness check
+      description: Answered directly by nginx; never reaches any service.
+      security: []
+      responses:
+        '200':
+          description: Gateway is up
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ok
+
+  /health/ready:
+    get:
+      summary: Gateway readiness check
+      description: Answered directly by nginx; never reaches any service.
+      security: []
+      responses:
+        '200':
+          description: Gateway is ready
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ok
+
+  /api/auth/login:
+    post:
+      summary: Mint a self-signed role token
+      description: >
+        Unauthenticated. This project has no real password/identity check (N1) — "login" mints a
+        JWT for whatever name+role the caller supplies. Used by the UI's login screen and by
+        scripts/verify.ts.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, role]
+              properties:
+                name:
+                  type: string
+                role:
+                  $ref: '#/components/schemas/Role'
+      responses:
+        '200':
+          description: Token minted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  token:
+                    type: string
+                    description: 'HS256 JWT, 12h expiry, claims: sub=name, role=role.'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /api/submissions:
+    post:
+      summary: Submit an invoice/expense for approval
+      security:
+        - bearerAuth: [submitter]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Invoice'
+      responses:
+        '202':
+          description: Accepted — processing continues asynchronously
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  trackingId:
+                    type: string
+                  correlationId:
+                    type: string
+        '200':
+          description: >
+            Short-circuited at intake — an exact duplicate already exists (F3 dedup on
+            vendor + invoiceNumber + total).
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  trackingId:
+                    type: string
+                  correlationId:
+                    type: string
+                  status:
+                    type: string
+                    enum: [duplicate]
+        '400':
+          description: Structural validation failure
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                    example: Invalid submission
+                  details:
+                    type: array
+                    items:
+                      type: string
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /api/submissions/mine:
+    get:
+      summary: List the caller's own submissions
+      description: Scoped to the caller's JWT `sub`, matched against the submission's `submitter` field.
+      security:
+        - bearerAuth: [submitter]
+      responses:
+        '200':
+          description: The caller's submissions, newest first
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/SubmissionSummary'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /api/submissions/{id}:
+    get:
+      summary: Get a submission's current status by internal id
+      description: No ownership check — any submitter/approver/admin may look up any id.
+      security:
+        - bearerAuth: [submitter, approver, admin]
+      parameters:
+        - $ref: '#/components/parameters/SubmissionId'
+      responses:
+        '200':
+          description: Current status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SubmissionStatus'
+        '404':
+          description: Submission not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /api/submissions/tracking/{trackingId}:
+    get:
+      summary: Resolve a tracking id to its submission status
+      description: Redirects to `GET /api/submissions/:id`.
+      security:
+        - bearerAuth: [submitter, approver, admin]
+      parameters:
+        - name: trackingId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '302':
+          description: Redirect to /api/submissions/:id
+        '404':
+          description: Tracking id not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /api/invoices/{id}/supplement:
+    patch:
+      summary: Supply additional information on a submission awaiting it
+      description: >
+        Only accepted while decision-service reports the submission's approval status as
+        `info_requested`. The body is merged onto the stored invoice payload and re-validated
+        as a full Invoice.
+      security:
+        - bearerAuth: [submitter]
+      parameters:
+        - $ref: '#/components/parameters/SubmissionId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              description: Partial Invoice patch — any subset of Invoice's fields.
+              type: object
+      responses:
+        '202':
+          description: Supplement accepted; submission re-enters the decision pipeline
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  submissionId:
+                    type: string
+                  status:
+                    type: string
+                    enum: [supplemented]
+        '400':
+          description: Merged payload failed validation
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                    example: Invalid supplement
+                  details:
+                    type: array
+                    items:
+                      type: string
+        '404':
+          description: Submission not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '409':
+          description: Submission is not currently awaiting more information
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /api/queue:
+    get:
+      summary: List submissions currently pending human review
+      security:
+        - bearerAuth: [approver, admin]
+      responses:
+        '200':
+          description: Pending queue items, newest first
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/QueueItem'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /api/approve/{queueId}:
+    post:
+      summary: Approve a pending queue item
+      security:
+        - bearerAuth: [approver, admin]
+      parameters:
+        - $ref: '#/components/parameters/QueueId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ApprovalActionRequest'
+      responses:
+        '200':
+          $ref: '#/components/responses/ActionOk'
+        '400':
+          description: approverId is required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Queue item not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '409':
+          description: Queue item is not pending (already resolved)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /api/reject/{queueId}:
+    post:
+      summary: Reject a pending queue item
+      security:
+        - bearerAuth: [approver, admin]
+      parameters:
+        - $ref: '#/components/parameters/QueueId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ApprovalActionRequest'
+      responses:
+        '200':
+          $ref: '#/components/responses/ActionOk'
+        '400':
+          description: approverId is required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Queue item not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '409':
+          description: Queue item is not pending (already resolved)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /api/request-info/{queueId}:
+    post:
+      summary: Request more information before deciding on a queue item
+      security:
+        - bearerAuth: [approver, admin]
+      parameters:
+        - $ref: '#/components/parameters/QueueId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [note]
+              properties:
+                note:
+                  type: string
+      responses:
+        '200':
+          $ref: '#/components/responses/ActionOk'
+        '400':
+          description: note is required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Queue item not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '409':
+          description: Queue item is not pending (already resolved)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /api/policy:
+    get:
+      summary: Get the current autonomy policy
+      security:
+        - bearerAuth: [approver, admin]
+      responses:
+        '200':
+          description: Current policy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PolicyConfig'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    put:
+      summary: Update the autonomy policy (ceiling and/or confidence threshold)
+      description: Stricter than GET — admin only. Optimistic-concurrency guarded.
+      security:
+        - bearerAuth: [admin]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                ceiling:
+                  type: number
+                  minimum: 0
+                confidenceThreshold:
+                  type: number
+                  minimum: 0
+                  maximum: 1
+      responses:
+        '200':
+          description: Updated policy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PolicyConfig'
+        '400':
+          description: ceiling or confidenceThreshold out of range
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '409':
+          description: Policy was updated concurrently — retry the request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /api/dashboard:
+    get:
+      summary: Aggregate decision/spend statistics
+      security:
+        - bearerAuth: [approver, admin]
+      responses:
+        '200':
+          description: Dashboard stats
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  totalDecisions:
+                    type: integer
+                  byRoute:
+                    type: object
+                    additionalProperties:
+                      type: integer
+                    description: Count of decisions per Route value (auto_approve, human_review, reject, duplicate).
+                  moneyAutoApproved:
+                    type: number
+                  moneyHumanApproved:
+                    type: number
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /api/audit/{submissionId}:
+    get:
+      summary: Full ordered audit trail for a submission
+      security:
+        - bearerAuth: [approver, admin]
+      parameters:
+        - $ref: '#/components/parameters/SubmissionIdParam'
+      responses:
+        '200':
+          description: Audit trail
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  submissionId:
+                    type: string
+                  correlationId:
+                    type: string
+                  events:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        eventType:
+                          type: string
+                        payload:
+                          type: object
+                        createdAt:
+                          type: string
+                          format: date-time
+        '404':
+          description: No audit trail for this submission yet
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /api/notifications/{submissionId}:
+    get:
+      summary: Notifications sent about a submission
+      description: >
+        No ownership check — submissionId is treated as an opaque id; there is no sub↔submission
+        link in the schema to check against.
+      security:
+        - bearerAuth: [submitter, approver, admin]
+      parameters:
+        - $ref: '#/components/parameters/SubmissionIdParam'
+      responses:
+        '200':
+          description: Notifications (empty array if none exist yet)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  submissionId:
+                    type: string
+                  notifications:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        recipient:
+                          type: string
+                        message:
+                          type: string
+                        eventType:
+                          type: string
+                        createdAt:
+                          type: string
+                          format: date-time
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /internal/mock-provider/force-fail:
+    post:
+      summary: Force the mock payment provider to fail deterministically (test harness only)
+      description: >
+        Not part of the public role-based API and not rate-limited. Gated by a shared-secret
+        header instead of a JWT. Used by scripts/verify.ts (Journey D) to prove the payment
+        saga's compensation path works.
+      security: []
+      parameters:
+        - name: X-Test-Harness-Secret
+          in: header
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [submissionId]
+              properties:
+                submissionId:
+                  type: string
+      responses:
+        '204':
+          description: Forced-failure flag set for this submission's next payment attempt
+        '400':
+          description: submissionId is required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: Missing/wrong X-Test-Harness-Secret
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
 components:
   securitySchemes:
     bearerAuth:
       type: http
       scheme: bearer
       bearerFormat: JWT
+      description: >
+        Self-signed HS256 JWT minted by POST /api/auth/login. The scopes listed per-operation
+        below (e.g. [submitter], [approver, admin]) document which of this system's three roles
+        may call that operation — OpenAPI has no native concept of role-based auth, so this reuses
+        the security-scheme scope mechanism to record it for documentation purposes only.
+
+  parameters:
+    SubmissionId:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+    SubmissionIdParam:
+      name: submissionId
+      in: path
+      required: true
+      schema:
+        type: string
+    QueueId:
+      name: queueId
+      in: path
+      required: true
+      schema:
+        type: string
+
+  responses:
+    BadRequest:
+      description: Validation error
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Unauthorized:
+      description: Missing or invalid bearer token
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Forbidden:
+      description: Valid token, wrong role for this operation
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    ActionOk:
+      description: Action applied
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              queueId:
+                type: string
+              submissionId:
+                type: string
+              status:
+                type: string
+                enum: [ok]
+
+  schemas:
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+        details:
+          type: array
+          items:
+            type: string
+
+    Role:
+      type: string
+      enum: [submitter, approver, admin]
+
+    Category:
+      type: string
+      enum: [meals, saas, travel, hardware, other]
+
+    BillingPeriod:
+      type: string
+      enum: [monthly, annual]
+
+    FareClass:
+      type: string
+      enum: [economy, business, first]
+
+    LineItem:
+      type: object
+      required: [description, quantity, unitPrice]
+      properties:
+        description:
+          type: string
+        quantity:
+          type: number
+        unitPrice:
+          type: number
+
+    Invoice:
+      type: object
+      required:
+        - vendor
+        - vendorKnown
+        - invoiceNumber
+        - currency
+        - category
+        - department
+        - submitter
+        - lineItems
+        - taxAmount
+        - total
+        - receiptPresent
+        - date
+      properties:
+        vendor:
+          type: string
+        vendorKnown:
+          type: boolean
+        invoiceNumber:
+          type: string
+        currency:
+          type: string
+          description: 3-letter ISO currency code
+          minLength: 3
+          maxLength: 3
+        category:
+          $ref: '#/components/schemas/Category'
+        department:
+          type: string
+        submitter:
+          type: string
+        lineItems:
+          type: array
+          minItems: 1
+          items:
+            $ref: '#/components/schemas/LineItem'
+        taxAmount:
+          type: number
+        total:
+          type: number
+        receiptPresent:
+          type: boolean
+        date:
+          type: string
+          format: date
+        notes:
+          type: string
+          maxLength: 2048
+        attendees:
+          type: integer
+        clientName:
+          type: string
+        billingPeriod:
+          $ref: '#/components/schemas/BillingPeriod'
+        fareClass:
+          $ref: '#/components/schemas/FareClass'
+
+    SubmissionStatusValue:
+      type: string
+      enum:
+        - pending
+        - auto_approve
+        - human_review
+        - reject
+        - duplicate
+        - approved
+        - rejected
+        - info_requested
+        - payment_succeeded
+        - payment_failed
+
+    SubmissionSummary:
+      type: object
+      properties:
+        id:
+          type: string
+        trackingId:
+          type: string
+        vendor:
+          type: string
+        invoiceNumber:
+          type: string
+        total:
+          type: string
+          description: Numeric column, serialized as a string.
+        currency:
+          type: string
+        status:
+          $ref: '#/components/schemas/SubmissionStatusValue'
+        reason:
+          type: string
+          description: Plain-language explanation of the current status.
+        createdAt:
+          type: string
+          format: date-time
+
+    SubmissionStatus:
+      type: object
+      properties:
+        id:
+          type: string
+        trackingId:
+          type: string
+        correlationId:
+          type: string
+        status:
+          $ref: '#/components/schemas/SubmissionStatusValue'
+        reason:
+          type: string
+        submittedAt:
+          type: string
+          format: date-time
+
+    PolicyViolation:
+      type: object
+      required: [ruleId]
+      properties:
+        ruleId:
+          type: string
+        message:
+          type: string
+
+    QueueItem:
+      type: object
+      properties:
+        queueId:
+          type: string
+        submissionId:
+          type: string
+        status:
+          type: string
+          enum: [pending]
+        agentRecommendation:
+          type: string
+        agentConfidence:
+          type: number
+        agentReasoning:
+          type: string
+        rulesCited:
+          type: array
+          items:
+            type: string
+        violations:
+          type: array
+          items:
+            $ref: '#/components/schemas/PolicyViolation'
+        correlationId:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+
+    ApprovalActionRequest:
+      type: object
+      required: [approverId]
+      properties:
+        approverId:
+          type: string
+        note:
+          type: string
+
+    PolicyConfig:
+      type: object
+      properties:
+        ceiling:
+          type: number
+        confidenceThreshold:
+          type: number
+        policyVersion:
+          type: integer

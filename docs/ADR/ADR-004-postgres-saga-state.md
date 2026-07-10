@@ -5,55 +5,47 @@
 
 ## Context
 
-The payment saga needs to persist its state (reservations, payments, budget rows). Two
-storage backends are available:
-
-1. **Redis** — Dapr state store. Fast key-value API, already used for idempotency keys
-   and processed event cache. Simple to use via Dapr.
-
-2. **PostgreSQL** — Relational database. Supports transactions, row-level locking,
-   CHECK constraints, and UNIQUE constraints.
+The payment saga needs somewhere to persist its state — reservations, payments, budget rows. Redis
+was already in use as the Dapr state store for idempotency keys and the processed-event cache, so
+it was the obvious first option: fast, simple key-value access, no new infrastructure. PostgreSQL
+was the other option, offering real transactions, row-level locking, and CHECK/UNIQUE constraints
+that Redis doesn't have.
 
 ## Decision
 
-Use **PostgreSQL** as the primary saga state store. Redis is used only for transient
-and supplementary data.
+PostgreSQL is the primary store for saga state. Redis is kept for things that are genuinely
+transient or supplementary.
 
-**PostgreSQL holds:**
-- `department_budgets` — row-locked during budget reserve
-- `reservations` — saga step state (active/confirmed/released/compensated)
-- `payments` — completed payments with unique idempotency keys
-
-**Redis holds (Dapr state store):**
-- Idempotency keys (TTL 24h) — fast duplicate detection without DB query
-- Processed event cache (TTL 1h) — dedup of redelivered events
-- Budget locks (TTL 60s, ETag-based) — supplementary fast-circuit check before
-  reaching PostgreSQL
-- Policy cache — full policy document, no TTL
+PostgreSQL holds `department_budgets` (row-locked during reservation), `reservations` (the saga's
+own step state — active, confirmed, released, compensated), and `payments` (completed payments,
+each with a unique idempotency key). Redis, via the Dapr state store, holds idempotency keys with a
+24-hour TTL for fast duplicate checks, a processed-event cache with a 1-hour TTL for deduping
+redelivered messages, short-lived ETag-based budget locks (60 seconds) as a fast pre-check before
+anything hits PostgreSQL, and the full policy document cache with no expiry.
 
 ## Consequences
 
-**Positive:**
-- **`SELECT ... FOR UPDATE`** provides row-level locking for concurrency safety.
-  Redis WATCH/MULTI/EXEC is optimistic — retry logic would be complex and fragile.
-- **CHECK constraints** enforce invariants at the database level:
-  `reserved + spent <= total` prevents overspend even if application logic has a bug.
-- **UNIQUE constraints** prevent duplicates: one payment per idempotency key, one
-  reservation per submission.
-- **Atomic transactions** — reservation insert + budget update in one BEGIN/COMMIT.
-  Crash mid-transaction → PostgreSQL rolls back, no partial state.
-- **Auditability** — `SELECT * FROM reservations WHERE submission_id = $1` reconstructs
-  the full saga timeline. Redis state is transient by design.
+`SELECT ... FOR UPDATE` gives real row-level locking for concurrency safety — Redis's
+WATCH/MULTI/EXEC is optimistic locking, and the retry logic to make that reliable here would have
+been more complex and more fragile than just using a database that supports pessimistic locks
+natively. CHECK constraints enforce invariants at the database level, so `reserved + spent <=
+total` holds even if an application bug tries to violate it. UNIQUE constraints do the same for
+duplicates — one payment per idempotency key, one reservation per submission, no amount of
+application-level carelessness can get around that. Reservation inserts and budget updates happen
+in a single transaction, so a crash mid-write rolls back cleanly instead of leaving partial state.
+And the whole saga timeline for any submission is just `SELECT * FROM reservations WHERE
+submission_id = $1` — Redis state, by contrast, is deliberately transient and wouldn't support
+that kind of reconstruction.
 
-**Negative:**
-- Slightly higher latency than Redis for simple reads (1-2ms vs <1ms). Not material
-  for hundreds of submissions per minute.
-- PostgreSQL is a single point of failure in Docker Compose. Mitigated by
-  `restart: unless-stopped` and health checks. In production: managed PostgreSQL with
-  replication.
+The cost is a small latency hit compared to Redis for simple reads — 1-2ms instead of under 1ms,
+which doesn't matter at the volumes this system handles. PostgreSQL is also a single point of
+failure inside Docker Compose; `restart: unless-stopped` plus health checks cover that for local
+development, and a production deployment would use a managed, replicated PostgreSQL instance
+instead.
 
-**Alternatives considered:**
-- Redis-only: No transactions, no row-locking, no CHECK constraints. Application-level
-  locking and constraint enforcement would be significantly more complex and error-prone.
-- Dapr state store with PostgreSQL backend: Would lose relational guarantees (CHECK,
-  FK, row-locking) because Dapr state store is a key-value abstraction, not relational.
+Redis alone was considered and rejected — no transactions, no row-locking, no CHECK constraints,
+which would have pushed all of that correctness burden into application code, and application-
+level locking is exactly the kind of thing that's easy to get subtly wrong. Using Dapr's state
+store backed by PostgreSQL was also considered, but Dapr's state store is a key-value abstraction
+regardless of what's behind it — using it would still mean giving up CHECK constraints, foreign
+keys, and row-locking, since those aren't things the abstraction exposes.
