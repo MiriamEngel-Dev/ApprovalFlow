@@ -5,50 +5,48 @@
 
 ## Context
 
-`decision-service` currently bundles four things: hard-stop/rule checks, the LLM agent call
-(assessment), the deterministic router (M12's autonomy-ceiling enforcement), and HITL
-approval-queue management (including re-assessment on supplement). M3 requires "at least 3
-microservices" and is graded specifically on IDesign-style volatility-based decomposition —
-decompose by *independent reason to change*, not by CRUD/entity. The LLM/RAG-tuning cadence
-*can* diverge from router/threshold-tuning cadence — a real, independent volatility reason — so
-splitting `decision-service` into an `assessment-service` (LLM + RAG only) and a
-`workflow-service` (router + ceiling + HITL queue) was considered.
+decision-service currently bundles four things together: hard-stop and rule checks, the LLM agent
+call, the deterministic router that enforces the autonomy ceiling, and management of the
+human-review queue, including re-assessment when a submission is supplemented. M3 asks for at
+least three microservices and is graded specifically on IDesign-style volatility-based
+decomposition — split by independent reason to change, not by CRUD entity. There's a real argument
+that the LLM/RAG side of things could change on a different cadence than the router or threshold
+tuning, which is a genuine, independent volatility reason, so I considered splitting
+decision-service into an `assessment-service` (LLM and RAG only) and a `workflow-service` (router,
+ceiling, HITL queue).
 
 ## Decision
 
-**Reject the split.** Keep `decision-service` as a single service owning hard-stops, the agent
-call, the router, and the HITL queue.
+I rejected the split. decision-service stays as one service, owning hard-stops, the agent call,
+the router, and the HITL queue together.
 
 ## Consequences
 
-**Why rejected:**
-1. The router's provability (M12/F10) rests on **pure-function unit tests + the CI eval
-   harness**, not on a process boundary. Moving the router to a second container adds a network
-   hop between "agent recommends" and "router decides" without strengthening the guarantee at
-   all — it's optics, not safety. The "agent recommends, router decides" separation is already
-   fully enforced in-process (the router is the only code path producing `auto_approve`; see §5).
-2. It would add a synchronous hop inside the tightest latency path in the system — the LLM call
-   already carries a ~30s timeout budget (§7) — plus a second correlationId/circuit-breaker
-   surface to reason about, for a capstone graded on "≥3 services, correct boundaries." M3 sets
-   no upper target; more services is not inherently worth more.
-3. It would raise the footprint from 12 to 14 containers (5 services × 2 [app+sidecar] + nginx +
-   Redis + PostgreSQL + UI) for a single-dev-machine `docker compose up`, with no corresponding
-   rubric benefit.
+The router's provability doesn't come from being in its own process — it comes from pure-function
+unit tests and the CI eval harness. Moving it into a second container would add a network hop
+between "the agent recommends" and "the router decides" without making that guarantee any
+stronger; it's optics, not actual safety. That separation is already fully enforced in-process
+today, since the router is the only code path in the system that can produce `auto_approve` (see
+§5 of ARCHITECTURE.md). Splitting it out would also add a synchronous hop right in the tightest
+latency path in the system — the LLM call already carries something like a 30-second timeout
+budget on its own — plus a second correlation-id and resiliency surface to reason about, for a
+capstone that's graded on having at least three well-bounded services, not on having as many as
+possible. And it would push the container count from 12 to 14 (five services × two for app plus
+sidecar, plus nginx, Redis, PostgreSQL, and the UI) for a setup that's meant to run with one
+`docker compose up` on a single dev machine, with nothing gained from the rubric's perspective in
+exchange.
 
-**Positive (of keeping it merged):**
-- One volatility area (the policy-decisioning workflow) stays as one service — hard-stops, the
-  agent call, the router, and the queue all change together whenever a policy or threshold
-  changes (`PUT /api/policy`), consistent with §1's "Why These Boundaries."
-- Simpler correlationId propagation and fewer Dapr resiliency policies to maintain.
+Keeping it merged means one volatility area — the whole policy-decisioning workflow — stays as one
+service: hard-stops, the agent call, the router, and the queue all change together whenever
+`PUT /api/policy` changes a threshold, which is consistent with the reasoning in §1's "Why These
+Boundaries" section. It also keeps correlation-id propagation simpler and cuts down on how many
+Dapr resiliency policies need maintaining. If the LLM/RAG layer's release cadence ever genuinely
+diverges from the router's — say, swapping providers weekly while the ceiling only changes
+quarterly — this decision is worth revisiting, which is exactly why it's written down here rather
+than left as an unrecorded judgment call.
 
-**Negative:**
-- If the LLM/RAG layer's release cadence genuinely diverges from the router's in a future
-  iteration (e.g., swapping providers weekly while the ceiling changes quarterly), this decision
-  should be revisited — recorded here so the reasoning isn't silently lost.
-
-**Alternatives considered:**
-- Split into `assessment-service` + `workflow-service`: rejected per the three points above.
-- Merge `decision-service` into `payment-service` (single "workflow" service): rejected —
-  payment's saga/compensation logic is a distinct financial-consistency volatility domain,
-  disjoint from policy decisioning; merging would blur the boundary IDesign penalizes most for
-  being drawn along convenience rather than volatility.
+The other option on the table was merging decision-service into payment-service instead, making one
+combined "workflow" service. That's worse, not better — payment's saga and compensation logic is
+its own financial-consistency volatility domain, entirely disjoint from policy decisioning, and
+merging the two would blur exactly the kind of boundary IDesign penalizes most: one drawn for
+convenience rather than around a real reason to change.

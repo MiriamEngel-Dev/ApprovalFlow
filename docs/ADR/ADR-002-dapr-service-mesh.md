@@ -5,56 +5,46 @@
 
 ## Context
 
-The system has 4 microservices that must communicate. Two approaches:
-
-1. **Direct HTTP calls** — each service calls others directly. Simple implementation,
-   zero additional infrastructure. But: no built-in observability, no retry/circuit-breaker,
-   no mTLS, manual service discovery.
-
-2. **Dapr service mesh** — each service gets a sidecar container. Services communicate
-   through the sidecar, which handles mTLS, retries, circuit-breaking, tracing, and
-   service discovery. Requires running one sidecar per service.
+The four microservices need a way to talk to each other. The simplest option is direct HTTP calls
+— zero extra infrastructure, easy to reason about — but it also means building retries, circuit
+breaking, mTLS, and service discovery by hand, or doing without them. The alternative is Dapr: give
+every service a sidecar container, and let the sidecar handle encryption, retries, tracing, and
+discovery, at the cost of running one extra container per service.
 
 ## Decision
 
-Use **Dapr as the service mesh** for all inter-service communication — both synchronous
-(service invocation) and asynchronous (pub/sub over Redis). Use the **HTTP API directly**
-(`fetch` to `localhost:3500`), not the JavaScript SDK — avoiding dependency risk.
+Dapr handles all inter-service communication — synchronous service invocation and async pub/sub
+over Redis alike. It's used through the plain HTTP API (`fetch` calls to `localhost:3500`) rather
+than the official JS SDK, mainly to avoid pulling in an extra dependency that would need to track
+Dapr's own version.
 
-Building blocks used:
-- **Service Invocation** — sync calls (gateway→services, decision→payment saga trigger)
-- **Pub/Sub** (Redis) — 11 topics, at-least-once delivery
-- **State Store** (Redis) — idempotency keys, processed event cache, budget locks, policy cache
-- **Secrets** (local file) — LLM API key, JWT signing key
-- **Configuration** — hot-reloaded policy thresholds
-- **Resiliency** — timeouts (10s–30s), retries (3×, scoped to 5xx/429/connection failures only —
-  no circuit breaker; see ARCHITECTURE.md §10 for why Dapr's can't safely sit on top of an API
-  that returns ordinary 4xx responses)
+The building blocks in use: service invocation for synchronous calls (gateway to the services,
+decision-service kicking off the payment saga), pub/sub over Redis across eleven topics with
+at-least-once delivery, the state store (also Redis) for idempotency keys, processed-event
+caching, budget locks, and the policy cache, a local-file secrets store for the LLM API key and
+JWT signing key, hot-reloadable configuration for policy thresholds, and resiliency policies —
+timeouts between 10 and 30 seconds, three retries scoped to 5xx/429/connection failures only. No
+circuit breaker sits on top of any of this; see ARCHITECTURE.md §10 for why Dapr's circuit breaker
+can't safely coexist with an API that returns ordinary 4xx responses as part of normal operation.
 
 ## Consequences
 
-**Positive:**
-- **mTLS** — all service-to-service traffic is encrypted without application code changes.
-- **Resiliency** — per-path timeout and retry declared in YAML, not code.
-- **Observability** — Dapr emits trace spans for every invocation. Correlation IDs
-  propagate via CloudEvents.
-- **Service discovery** — Dapr sidecars handle it; apps only know app-ids
-  (`decision-service`), not IPs or ports.
-- **Pub/sub abstraction** — apps publish to topic names, not Redis channels. Subscriber
-  dedup via CloudEvent `id` field.
-- **Secrets** — API keys never in code or env vars.
-- **Portability** — moving from Redis to Kafka for pub/sub changes only the Dapr
-  component YAML, not application code.
+The upside is real: every service-to-service call gets mTLS without a line of application code,
+timeout and retry behavior lives in YAML instead of being hand-rolled per call site, and Dapr
+emits trace spans for every invocation with correlation IDs propagating automatically through
+CloudEvents. Services only need to know each other's app-ids, not IPs or ports, and pub/sub
+publishers just write to a topic name rather than talking to Redis channels directly — subscriber
+dedup comes for free via the CloudEvent `id` field. Secrets never touch application code or env
+vars. And if Redis ever needed to be swapped for Kafka, that would be a change to a Dapr component
+YAML file, not to any service's code.
 
-**Negative:**
-- 4 additional containers (one sidecar per service) — adds ~200 MB RAM.
-- Sidecar startup adds ~2 seconds to service initialization.
-- Debugging requires tracing through an additional layer (app → sidecar → sidecar → app).
+The cost is four extra containers — one sidecar per service, roughly 200MB of RAM — plus a couple
+of seconds added to service startup while the sidecar comes up, and one more layer to trace through
+when debugging (app → sidecar → sidecar → app).
 
-**Alternatives considered:**
-- Direct HTTP calls with manual retry/circuit-breaker libraries: more code, less
-  consistency, no built-in mTLS or tracing.
-- gRPC directly: better performance but no pub/sub abstraction, no secrets, no state
-  store — each would need separate integration.
-- Using the Dapr JavaScript SDK: abandoned due to dependency risk and version mismatch
-  concerns — the HTTP API is stable and portable.
+Direct HTTP calls with hand-rolled retry/circuit-breaker libraries were the obvious alternative,
+but that's more code with less consistency across services and no built-in mTLS or tracing. gRPC
+was also on the table — better raw performance, but no pub/sub abstraction, no secrets store, no
+state store, so each of those would need its own separate integration. The Dapr JS SDK itself was
+ruled out early over dependency risk and version-mismatch concerns; the HTTP API is stable and
+doesn't tie the codebase to a client library's release cadence.

@@ -1,30 +1,30 @@
 # ADR-008: Fail-open for AI provider errors
 
-**Context:** The LLM provider (Gemini free tier) may return errors: rate limits (429),
-timeouts, malformed responses, or 5xx. The system must handle these without data loss
-or incorrect auto-approvals.
+**Context:** The LLM provider (Gemini's free tier) can fail in the usual ways — rate limits,
+timeouts, malformed responses, 5xx errors. Whatever happens, the system can't lose data or, worse,
+auto-approve something it never actually evaluated.
 
-**Decision:** **Fail open** — any LLM error or timeout sets `confidence=0` and the
-deterministic router routes to `human_review`.
+**Decision:** Fail open. Any LLM error or timeout sets confidence to 0, and the deterministic
+router sends it to `human_review`.
 
-**Rationale:**
-- Conservative by default: when the agent can't analyze, a human must decide. This
-  never auto-approves a risky item.
-- No submissions are rejected or dropped — the system remains available, just with
-  increased human workload during provider outages.
-- The router's ceiling and hard stops are independent of the agent — even if the
-  fallback path somehow produced `auto_approve` (it can't), the router would still
-  check the ceiling.
+**Rationale:** This keeps the system conservative by default — if the agent can't actually analyze
+something, a human decides instead, and nothing gets approved on a technicality. No submission is
+ever rejected or dropped because of a provider hiccup either; the system just keeps running, with
+more of the load falling on human reviewers during an outage. And this doesn't create any new risk
+on the router side — the ceiling and hard stops don't care why confidence is low, so even in the
+hypothetical case where the fallback path somehow produced something that looked like
+`auto_approve` (which it structurally can't), the router would still apply the same ceiling check
+it always does.
 
-**Alternatives considered:**
-- Fail-closed (503 all submissions): System is unavailable. Rejected because submission
-  must be non-blocking (F1).
-- Retry with exponential backoff only: Adds latency; a prolonged outage would queue
-  submissions indefinitely. Rejected because a human can decide faster.
+Failing closed — returning a 503 to every submission during an outage — was the obvious
+alternative, but that makes the whole system unavailable, and submission has to stay non-blocking
+regardless of what's happening with the AI provider. Retrying with exponential backoff instead of
+falling back to a human was also considered, but that just adds latency, and a long outage would
+leave submissions queuing indefinitely — a human can make a call faster than waiting out a
+degraded provider.
 
-**Consequences:**
-- ✅ System remains available during provider outages
-- ✅ Zero risk of auto-approving during provider errors
-- ⚠️ Human queue grows during outages — need monitoring on escalation rate
-- ⚠️ A sustained outage could overwhelm approvers — mitigated by the `AUTONOMY-CEILING`
-  limiting damage per item to $250
+**Consequences:** The system stays available through provider outages, and there's zero risk of
+auto-approving anything during one. The real cost shows up in the human queue, which grows while
+the provider is down — worth monitoring the escalation rate for. And a long enough outage could
+still overwhelm approvers, though the $250 autonomy ceiling caps how much damage any single item
+could have done anyway, which limits how bad things get even in the worst case.
