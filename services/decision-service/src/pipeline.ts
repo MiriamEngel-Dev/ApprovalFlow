@@ -186,6 +186,7 @@ export async function processInvoiceEvent(
             resolvedAt: null,
             department: normalized.department,
             amount: normalized.convertedTotal.toFixed(2),
+            submitter: normalized.submitter,
           })
           .where(eq(approvalQueue.id, queueId));
       } else {
@@ -196,6 +197,7 @@ export async function processInvoiceEvent(
             correlationId: event.correlationId,
             department: normalized.department,
             amount: normalized.convertedTotal.toFixed(2),
+            submitter: normalized.submitter,
           })
           .returning({ id: approvalQueue.id });
         if (!inserted) throw new Error('Insert into approval_queue returned no row');

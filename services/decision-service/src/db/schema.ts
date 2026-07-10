@@ -64,6 +64,7 @@ export const approvalQueue = pgTable(
      * created in pipeline.ts. */
     department: varchar('department', { length: 128 }).notNull(),
     amount: numeric('amount', { precision: 12, scale: 2 }).notNull(),
+    submitter: varchar('submitter', { length: 256 }).notNull(),
     approverId: varchar('approver_id', { length: 256 }),
     approverNote: varchar('approver_note', { length: 2048 }),
     requestInfoNote: varchar('request_info_note', { length: 2048 }),

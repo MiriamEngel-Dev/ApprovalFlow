@@ -447,7 +447,7 @@ Drizzle generates down-SQL per migration; applied manually.
 | Table | Key Columns | Key Constraints |
 |---|---|---|
 | `decisions` | id, submission_id, version, route (auto_approve/human_review/reject/duplicate), agent_recommendation, agent_confidence, agent_reasoning, rules_cited (JSONB), violations (JSONB), policy_snapshot (JSONB), correlation_id | `UNIQUE(submission_id, version)`, `CHECK(route)` |
-| `approval_queue` | id, submission_id, status (pending/approved/rejected/info_requested), approver_id, approver_note, request_info_note, correlation_id, resolved_at | `UNIQUE(submission_id)`, `CHECK(status)` |
+| `approval_queue` | id, submission_id, status (pending/approved/rejected/info_requested), department, amount, submitter, approver_id, approver_note, request_info_note, correlation_id, resolved_at | `UNIQUE(submission_id)`, `CHECK(status)` |
 
 **`decisions` is versioned, `approval_queue` isn't:** the request_info → supplement → re-assess
 workflow (§3, §10) runs a second full assessment per submission, so `version` lets both persist

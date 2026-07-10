@@ -861,6 +861,13 @@ components:
         status:
           type: string
           enum: [pending]
+        department:
+          type: string
+        amount:
+          type: string
+          description: Numeric column, serialized as a string.
+        submitter:
+          type: string
         agentRecommendation:
           type: string
         agentConfidence:

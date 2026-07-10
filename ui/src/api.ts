@@ -97,6 +97,9 @@ export interface QueueItem {
   queueId: string;
   submissionId: string;
   status: string;
+  department: string;
+  amount: string;
+  submitter: string;
   agentRecommendation?: string;
   agentConfidence?: number;
   agentReasoning?: string;
