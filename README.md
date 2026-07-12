@@ -139,4 +139,5 @@ separate "trust me" check.
 - [docs/PRODUCT-DILEMMA.md](docs/PRODUCT-DILEMMA.md) — the autonomy dilemma and trade-off
 - [docs/ADR/ADR.md](docs/ADR/ADR.md) — Architecture Decision Records
 - [docs/IMPLEMENTATION-PLAN.md](docs/IMPLEMENTATION-PLAN.md) — build sequencing/milestones
-- [docs/openapi.yaml](docs/openapi.yaml) — API specification
+- [docs/openapi.yaml](docs/openapi.yaml) — API specification (interactive Swagger UI at
+  `http://localhost:8080/api-docs/` once the stack is running)
