@@ -25,6 +25,11 @@ npm-debug.log*
 .DS_Store
 Thumbs.db
 
+# Microsoft Office lock files (created while a .pptx/.docx/.xlsx is open)
+~$*.pptx
+~$*.docx
+~$*.xlsx
+
 # Docker volumes captured locally (if any)
 .docker-data/
 

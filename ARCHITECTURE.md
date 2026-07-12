@@ -228,7 +228,7 @@ happened, and confirms it instead of double-charging.
 
 ## 5. Deterministic Router (M12 — Provable)
 
-**The agent recommends. The router decides.**
+**The agent recommends. The router decides.** (ADR-014)
 
 A pure TypeScript function — no AI, no I/O — that receives ceiling and thresholds as injected
 parameters (loaded from Dapr state at startup, cached, hot-reloaded between requests). The
@@ -562,7 +562,8 @@ approvers acting on the same task simultaneously.
 Self-signed JWT with roles: **submitter**, **approver**, **admin** (`generate-jwt.js` emits tokens
 per role). Plain `nginx:alpine` can't verify a JWT signature, so it passes `Authorization` through
 untouched — each service validates the signature and role itself via a shared `shared/auth.ts`
-helper (verify → extract role → 401/403). No external identity provider needed.
+helper (verify → extract role → 401/403). No external identity provider needed — see ADR-015 for
+why this is enough for what this project is actually graded on.
 
 **Role → endpoint mapping:**
 

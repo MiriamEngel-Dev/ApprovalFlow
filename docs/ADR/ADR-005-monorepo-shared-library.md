@@ -1,5 +1,8 @@
 # ADR-005: Monorepo with shared library
 
+**Status:** Accepted
+**Date:** 2026-07-04
+
 **Context:** The four services all need the same set of types (`Invoice`, `AgentAssessment`,
 `Decision`, `SagaState`, `Route`), plus a Dapr HTTP client wrapper, correlation-id propagation, and
 the same structured-logging setup. Copy-pasting that across four separate repos is exactly how
