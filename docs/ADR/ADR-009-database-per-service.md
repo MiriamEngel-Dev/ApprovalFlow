@@ -1,5 +1,8 @@
 # ADR-009: Database-per-service over shared database
 
+**Status:** Accepted
+**Date:** 2026-07-05
+
 **Context:** The four services all need persistent storage. A single shared PostgreSQL database
 would make cross-service queries and transactions trivial, but it also couples the services
 together in exactly the way a microservice architecture is supposed to avoid. Fully separate

@@ -16,5 +16,7 @@ Key architectural decisions for ApprovalFlow. Each ADR follows the format:
 | [ADR-009](ADR-009-database-per-service.md) | Database-per-service over shared database | Accepted |
 | [ADR-010](ADR-010-billing-period-field.md) | Structured `billingPeriod` field over inferring from free text | Accepted |
 | [ADR-011](ADR-011-decision-service-scope.md) | decision-service scope — considered-and-rejected assessment/workflow split | Accepted |
-| [ADR-012](ADR-012-policy-snapshot.md) | Policy snapshot per decision — closing the F9/F10 proof gap | **Draft — needs your own review** |
-| [ADR-013](ADR-013-multi-instance-safety.md) | `FOR UPDATE SKIP LOCKED` for background polling loops | **Draft — needs your own review** |
+| [ADR-012](ADR-012-policy-snapshot.md) | Policy snapshot per decision — closing the F9/F10 proof gap | Accepted |
+| [ADR-013](ADR-013-multi-instance-safety.md) | `FOR UPDATE SKIP LOCKED` for background polling loops | Accepted |
+| [ADR-014](ADR-014-deterministic-router-gatekeeper.md) | The deterministic router, not the agent, is the only path to `auto_approve` | Accepted |
+| [ADR-015](ADR-015-self-signed-jwt-auth.md) | Self-signed JWT roles instead of a real identity provider | Accepted |

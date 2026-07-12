@@ -2,19 +2,31 @@ import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import type { Category } from '@approvalflow/shared';
 import { submit, ApiError, type SubmitResponse } from '../api.js';
+import { getToken, decodeToken } from '../auth.js';
+import { badgeClassFor } from '../statusBadge.js';
 
 const CATEGORIES: Category[] = ['meals', 'saas', 'travel', 'hardware', 'other'];
 
 // F1: the practical subset of Invoice needed for a usable form — the backend's validation.ts is
 // the real gate, this is just enough to not send obviously-broken input.
 export function Submit() {
+  // GET /api/submissions/mine matches on exact equality against the logged-in JWT's `sub` — a
+  // free-text Submitter field independent of the login identity meant those two could silently
+  // diverge (e.g. logging in as "dana.cohen" but typing "dana.cohen@northwind.example" here),
+  // making a submitter's own items invisible to their own "My submissions" list. Deriving it from
+  // the session instead of asking for it closes that gap structurally rather than by convention.
+  const claims = (() => {
+    const token = getToken();
+    return token ? decodeToken(token) : null;
+  })();
+  const submitter = claims?.sub ?? '';
+
   const [vendor, setVendor] = useState('');
   const [vendorKnown, setVendorKnown] = useState(true);
   const [invoiceNumber, setInvoiceNumber] = useState('');
   const [currency, setCurrency] = useState('USD');
   const [category, setCategory] = useState<Category>('other');
   const [department, setDepartment] = useState('');
-  const [submitter, setSubmitter] = useState('');
   const [description, setDescription] = useState('');
   const [quantity, setQuantity] = useState('1');
   const [unitPrice, setUnitPrice] = useState('');
@@ -70,17 +82,26 @@ export function Submit() {
   };
 
   if (result) {
+    const isDuplicate = result.status === 'duplicate';
     return (
       <div className="card" style={{ maxWidth: 480 }}>
-        <h2>Submitted</h2>
+        <h2>{isDuplicate ? 'Duplicate detected' : 'Submitted'}</h2>
+        {isDuplicate && (
+          <p>
+            <span className={`badge ${badgeClassFor('duplicate')}`}>rejected as duplicate</span>
+          </p>
+        )}
         <p>
           Tracking ID: <code>{result.trackingId}</code>
         </p>
         <p>
           Correlation ID: <code>{result.correlationId}</code>
         </p>
-        {result.status === 'duplicate' && (
-          <p className="muted">This looks like a duplicate of a prior submission.</p>
+        {isDuplicate && (
+          <p>
+            This receipt already exists in the system — the same vendor, invoice number, and total
+            were already submitted earlier, so this one was not processed again.
+          </p>
         )}
         <div className="button-row" style={{ marginTop: '1rem' }}>
           <Link to={`/status/${result.trackingId}`}>
@@ -100,7 +121,7 @@ export function Submit() {
   return (
     <div>
       <h2>Submit an invoice</h2>
-      <form onSubmit={handleSubmit} className="form-grid">
+      <form onSubmit={handleSubmit} className="form-grid-2col">
         <div className="field">
           <label>Vendor</label>
           <input value={vendor} onChange={(e) => setVendor(e.target.value)} required />
@@ -170,7 +191,7 @@ export function Submit() {
         </div>
         <div className="field">
           <label>Submitter</label>
-          <input value={submitter} onChange={(e) => setSubmitter(e.target.value)} required />
+          <input value={submitter} disabled readOnly />
         </div>
         <div className="field">
           <label>Line item description</label>
@@ -207,8 +228,11 @@ export function Submit() {
             onChange={(e) => setTaxAmount(e.target.value)}
           />
         </div>
-        <div className="card" style={{ padding: '0.75rem 1rem' }}>
-          Total: <strong>{total.toFixed(2)}</strong> {currency}
+        <div className="total-banner field-full">
+          <span>Total</span>
+          <strong>
+            {total.toFixed(2)} {currency}
+          </strong>
         </div>
         <div className="field field-check">
           <input
@@ -223,12 +247,12 @@ export function Submit() {
           <label>Date</label>
           <input type="date" value={date} onChange={(e) => setDate(e.target.value)} required />
         </div>
-        <div className="field">
+        <div className="field field-full">
           <label>Notes (optional)</label>
           <textarea value={notes} onChange={(e) => setNotes(e.target.value)} maxLength={2048} />
         </div>
-        {error && <p className="error-text">{error}</p>}
-        <button type="submit" disabled={busy}>
+        {error && <p className="error-text field-full">{error}</p>}
+        <button type="submit" disabled={busy} className="field-full">
           {busy ? 'Submitting…' : 'Submit'}
         </button>
       </form>

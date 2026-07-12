@@ -228,7 +228,7 @@ happened, and confirms it instead of double-charging.
 
 ## 5. Deterministic Router (M12 — Provable)
 
-**The agent recommends. The router decides.**
+**The agent recommends. The router decides.** (ADR-014)
 
 A pure TypeScript function — no AI, no I/O — that receives ceiling and thresholds as injected
 parameters (loaded from Dapr state at startup, cached, hot-reloaded between requests). The
@@ -482,7 +482,11 @@ already-populated table is a no-op.
 
 ## 9. API Overview
 
-Full specification: `docs/openapi.yaml` (OpenAPI 3.0.3).
+Full specification: `docs/openapi.yaml` (OpenAPI 3.0.3). Interactive Swagger UI at
+`http://localhost:8080/api-docs/` (nginx serves `swagger-ui-dist` from a CDN as a static page,
+pointed at `/openapi.yaml`, also served statically — no new service/container) — the spec's
+`bearerAuth` scheme drives a working Authorize button, so `POST /api/auth/login` → Authorize →
+any endpoint can be exercised directly from the browser.
 
 | Domain | Endpoint | Method | Purpose |
 |---|---|---|---|
@@ -558,7 +562,8 @@ approvers acting on the same task simultaneously.
 Self-signed JWT with roles: **submitter**, **approver**, **admin** (`generate-jwt.js` emits tokens
 per role). Plain `nginx:alpine` can't verify a JWT signature, so it passes `Authorization` through
 untouched — each service validates the signature and role itself via a shared `shared/auth.ts`
-helper (verify → extract role → 401/403). No external identity provider needed.
+helper (verify → extract role → 401/403). No external identity provider needed — see ADR-015 for
+why this is enough for what this project is actually graded on.
 
 **Role → endpoint mapping:**
 

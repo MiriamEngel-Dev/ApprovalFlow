@@ -1,5 +1,8 @@
 # ADR-008: Fail-open for AI provider errors
 
+**Status:** Accepted
+**Date:** 2026-07-05
+
 **Context:** The LLM provider (Gemini's free tier) can fail in the usual ways — rate limits,
 timeouts, malformed responses, 5xx errors. Whatever happens, the system can't lose data or, worse,
 auto-approve something it never actually evaluated.

@@ -24,22 +24,28 @@ export function App() {
   return (
     <div className="app-shell">
       <header className="app-header">
-        <nav className="app-nav">
-          <Link className="nav-link" to="/">
-            Submit
-          </Link>
-          {claims.role === 'submitter' && (
-            <Link className="nav-link" to="/my-submissions">
-              My submissions
+        <div style={{ display: 'flex', alignItems: 'center', gap: '2rem' }}>
+          <div className="brand">
+            <div className="brand-mark">AF</div>
+            <h1>ApprovalFlow</h1>
+          </div>
+          <nav className="app-nav">
+            <Link className="nav-link" to="/">
+              Submit
             </Link>
-          )}
-          <Link className="nav-link" to="/queue">
-            Queue
-          </Link>
-          <Link className="nav-link" to="/dashboard">
-            Dashboard
-          </Link>
-        </nav>
+            {claims.role === 'submitter' && (
+              <Link className="nav-link" to="/my-submissions">
+                My submissions
+              </Link>
+            )}
+            <Link className="nav-link" to="/queue">
+              Queue
+            </Link>
+            <Link className="nav-link" to="/dashboard">
+              Dashboard
+            </Link>
+          </nav>
+        </div>
         <div className="user-chip">
           <span>
             <strong>{claims.sub}</strong> · {claims.role}
