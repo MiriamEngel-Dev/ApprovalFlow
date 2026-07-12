@@ -1,5 +1,8 @@
 # ADR-007: Drizzle ORM over Prisma / TypeORM
 
+**Status:** Accepted
+**Date:** 2026-07-04
+
 **Context:** Each of the four services needs its own PostgreSQL schema, migrations, and type-safe
 query building. Which ORM I picked was going to affect day-to-day developer experience, how
 migrations are handled, and runtime performance.

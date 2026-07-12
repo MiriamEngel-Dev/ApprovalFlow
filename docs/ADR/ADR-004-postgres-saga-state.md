@@ -1,7 +1,7 @@
 # ADR-004: PostgreSQL for Saga State vs Redis
 
 **Status:** Accepted
-**Date:** 2026-07-05
+**Date:** 2026-07-03
 
 ## Context
 
