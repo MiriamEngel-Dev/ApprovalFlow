@@ -1,0 +1,1 @@
+ALTER TABLE "approval_queue" ADD COLUMN "submitter" varchar(256) NOT NULL;

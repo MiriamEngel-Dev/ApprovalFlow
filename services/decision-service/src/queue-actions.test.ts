@@ -16,6 +16,7 @@ async function seedPendingQueueItem(): Promise<string> {
       correlationId: randomUUID(),
       department: 'engineering-2026Q2',
       amount: '1400.00',
+      submitter: 'jane@northwind.example',
     })
     .returning({ id: approvalQueue.id });
   if (!row) throw new Error('seed insert returned no row');

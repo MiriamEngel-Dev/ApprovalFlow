@@ -55,6 +55,9 @@ export function Queue() {
               Submission <code>{item.submissionId}</code>
             </p>
             <p>
+              <strong>{item.submitter}</strong> — {item.department} — ${item.amount}
+            </p>
+            <p>
               Agent recommendation:{' '}
               <span className="badge badge-neutral">{item.agentRecommendation ?? '—'}</span>{' '}
               <span className="muted">confidence {item.agentConfidence?.toFixed(2) ?? '—'}</span>

@@ -51,6 +51,7 @@ describe('getDecisionSummary — internal contract for submission-service (F2, F
       status: 'approved',
       department: 'engineering-2026Q2',
       amount: '100.00',
+      submitter: 'jane@northwind.example',
       approverId: 'manager@northwind.example',
       correlationId: randomUUID(),
     });

@@ -220,6 +220,7 @@ describe('processInvoiceEvent — re-assessment supersedes an in-flight queue it
         correlationId,
         department: AUTO_APPROVE_INVOICE.department,
         amount: '42.00',
+        submitter: AUTO_APPROVE_INVOICE.submitter,
         status: 'approved',
         resolvedAt: new Date(),
         approverId: 'manager@northwind.example',
