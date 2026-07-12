@@ -1,0 +1,34 @@
+{
+  "version": "7",
+  "dialect": "postgresql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "7",
+      "when": 1783426399948,
+      "tag": "0000_wet_robin_chapel",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1783429791851,
+      "tag": "0001_dark_turbo",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1783590054969,
+      "tag": "0002_tranquil_firebird",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1783670649465,
+      "tag": "0003_cynical_bloodstrike",
+      "breakpoints": true
+    }
+  ]
+}

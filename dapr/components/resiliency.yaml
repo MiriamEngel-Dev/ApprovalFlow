@@ -1,0 +1,53 @@
+apiVersion: dapr.io/v1alpha1
+kind: Resiliency
+metadata:
+  name: resiliency
+scopes:
+  - decision-service
+  - payment-service
+  - submission-service
+  - audit-service
+spec:
+  policies:
+    timeouts:
+      llmProviderTimeout: 30s
+      paymentSagaTimeout: 10s
+      defaultTimeout: 5s
+    retries:
+      # `matching` keeps the retry itself from wasting attempts on ordinary 4xx business
+      # responses (401/403/404/400) — only real server errors (5xx) and rate-limiting (429) are
+      # retried. Connection failures and timeouts still count too (those aren't HTTP status
+      # codes, so `matching` doesn't touch them — they always retry).
+      defaultRetry:
+        policy: constant
+        duration: 1s
+        maxRetries: 3
+        matching:
+          httpStatusCodes: '429,500-599'
+
+  # No circuitBreaker on the app targets below (N3's actual requirement is outbox + bulkhead +
+  # throttling — all satisfied elsewhere: outbox relays, decision-service's LLM-call semaphore,
+  # nginx's rate limiting — none of which need this). Live-reproduced why: Dapr's circuit breaker
+  # counts *every* non-2xx invoke response as a failure toward `consecutiveFailures`, with no way
+  # to scope it to real infrastructure failures only — confirmed empirically that even routing
+  # 4xx through `matching.httpStatusCodes` above (which does stop them from being retried) does
+  # NOT stop them from tripping the breaker; that's a separate, independent counter. So 5 ordinary
+  # 401s (a gateway rejecting unauthenticated requests — completely normal traffic) would black
+  # out the entire target app for 60s, including subsequently valid requests, with no recovery as
+  # long as any more invalid traffic kept arriving. Timeout + retry (both still active, above)
+  # already provide real protection against a genuinely failing dependency; circuit breaking on
+  # top of them isn't safe to use here given this constraint in Dapr's current implementation.
+  targets:
+    apps:
+      decision-service:
+        timeout: llmProviderTimeout
+        retry: defaultRetry
+      payment-service:
+        timeout: paymentSagaTimeout
+        retry: defaultRetry
+      submission-service:
+        timeout: defaultTimeout
+        retry: defaultRetry
+      audit-service:
+        timeout: defaultTimeout
+        retry: defaultRetry
