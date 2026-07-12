@@ -1,0 +1,231 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>ApprovalFlow API — Reference</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/swagger-ui-dist@5/swagger-ui.css" />
+    <style>
+      :root {
+        --color-primary: #c2298a;
+        --color-primary-hover: #a21f70;
+        --color-primary-soft: #fce9f4;
+        --color-text: #2b3245;
+        --color-text-muted: #55524d;
+        --color-bg: #f2ead9;
+        --color-surface: #faf6ec;
+        --color-border: #ddd2b8;
+        --radius: 12px;
+      }
+
+      * {
+        font-family:
+          'Inter',
+          -apple-system,
+          BlinkMacSystemFont,
+          sans-serif;
+      }
+
+      body {
+        margin: 0;
+        background: var(--color-bg);
+      }
+
+      .swagger-ui .topbar {
+        display: none;
+      }
+
+      .approvalflow-header {
+        background: linear-gradient(155deg, #3a4360 0%, #2b3245 55%, #232840 100%);
+        color: #f2ead9;
+        padding: 2.5rem 2.5rem 3.5rem;
+        box-shadow: 0 4px 30px rgba(43, 50, 69, 0.35);
+        position: relative;
+        overflow: hidden;
+      }
+
+      .approvalflow-header::after {
+        content: '';
+        position: absolute;
+        inset: 0;
+        background: radial-gradient(circle at 15% 0%, rgba(255, 255, 255, 0.12), transparent 55%);
+        pointer-events: none;
+      }
+
+      .approvalflow-header .brand {
+        display: flex;
+        align-items: center;
+        gap: 0.6rem;
+        margin-bottom: 0.5rem;
+      }
+
+      .approvalflow-header .brand-mark {
+        width: 34px;
+        height: 34px;
+        border-radius: 9px;
+        background: linear-gradient(145deg, #e0499f 0%, var(--color-primary) 100%);
+        color: #fff;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-weight: 700;
+        font-size: 1rem;
+        box-shadow:
+          0 3px 10px rgba(194, 41, 138, 0.5),
+          inset 0 1px 1px rgba(255, 255, 255, 0.4);
+      }
+
+      .approvalflow-header h1 {
+        margin: 0;
+        font-size: 1.5rem;
+        font-weight: 700;
+        letter-spacing: -0.02em;
+        color: #fff;
+      }
+
+      .approvalflow-header p {
+        margin: 0;
+        opacity: 0.75;
+        font-size: 0.95rem;
+        max-width: 640px;
+        line-height: 1.5;
+      }
+
+      .swagger-ui-wrap {
+        max-width: 1100px;
+        margin: -2rem auto 3rem;
+        padding: 0 1.5rem;
+      }
+
+      .swagger-ui-card {
+        background: linear-gradient(180deg, #ffffff 0%, var(--color-surface) 100%);
+        border-radius: var(--radius);
+        box-shadow:
+          0 1px 0 rgba(255, 255, 255, 0.8) inset,
+          0 12px 32px rgba(43, 50, 69, 0.18);
+        padding: 1rem 1.5rem 1.5rem;
+        border: 1px solid var(--color-border);
+      }
+
+      .swagger-ui .info {
+        margin: 1.5rem 0;
+      }
+
+      .swagger-ui .info .title {
+        color: var(--color-text);
+        font-weight: 700;
+      }
+
+      .swagger-ui .info .title small {
+        background: var(--color-primary);
+      }
+
+      .swagger-ui .scheme-container {
+        background: transparent;
+        box-shadow: none;
+        padding: 0;
+      }
+
+      .swagger-ui .btn.authorize {
+        color: var(--color-primary);
+        border-color: var(--color-primary);
+        border-radius: 8px;
+        font-weight: 600;
+        background: linear-gradient(180deg, #fff 0%, var(--color-primary-soft) 100%);
+        box-shadow: 0 2px 8px rgba(194, 41, 138, 0.2);
+      }
+
+      .swagger-ui .btn.authorize svg {
+        fill: var(--color-primary);
+      }
+
+      .swagger-ui select {
+        border-color: var(--color-border);
+      }
+
+      .swagger-ui .opblock {
+        border-radius: 10px;
+        box-shadow: none;
+        border-width: 1px;
+        background: var(--color-surface);
+      }
+
+      .swagger-ui .opblock .opblock-summary-method {
+        border-radius: 6px;
+        font-weight: 700;
+        background: linear-gradient(180deg, #e0499f 0%, var(--color-primary) 100%);
+        box-shadow:
+          inset 0 1px 0 rgba(255, 255, 255, 0.35),
+          0 2px 6px rgba(194, 41, 138, 0.35);
+      }
+
+      .swagger-ui .opblock.opblock-get .opblock-summary-method {
+        background: linear-gradient(180deg, #454e6b 0%, var(--color-text) 100%);
+        box-shadow:
+          inset 0 1px 0 rgba(255, 255, 255, 0.2),
+          0 2px 6px rgba(43, 50, 69, 0.35);
+      }
+
+      .swagger-ui .opblock-tag {
+        font-weight: 700;
+        color: var(--color-text);
+        border-bottom: 1px solid var(--color-border);
+      }
+
+      .swagger-ui .btn.execute {
+        background: linear-gradient(180deg, #e0499f 0%, var(--color-primary) 100%);
+        border-color: var(--color-primary);
+        border-radius: 8px;
+        box-shadow:
+          inset 0 1px 0 rgba(255, 255, 255, 0.35),
+          0 3px 10px rgba(194, 41, 138, 0.4);
+      }
+
+      .swagger-ui table thead tr td,
+      .swagger-ui table thead tr th {
+        border-bottom: 1px solid var(--color-border);
+        color: var(--color-text-muted);
+      }
+
+      .swagger-ui .parameter__name {
+        color: var(--color-text);
+      }
+
+      .swagger-ui .response-col_status {
+        color: var(--color-text);
+      }
+    </style>
+  </head>
+  <body>
+    <header class="approvalflow-header">
+      <div class="brand">
+        <div class="brand-mark">AF</div>
+        <h1>ApprovalFlow</h1>
+      </div>
+      <p>
+        Invoice &amp; expense approval API — self-signed JWT auth (login below, then Authorize),
+        every route documented with request/response schemas and roles.
+      </p>
+    </header>
+    <div class="swagger-ui-wrap">
+      <div class="swagger-ui-card">
+        <div id="swagger-ui"></div>
+      </div>
+    </div>
+    <script src="https://cdn.jsdelivr.net/npm/swagger-ui-dist@5/swagger-ui-bundle.js"></script>
+    <script>
+      window.onload = () => {
+        window.ui = SwaggerUIBundle({
+          url: '/openapi.yaml',
+          dom_id: '#swagger-ui',
+          presets: [SwaggerUIBundle.presets.apis, SwaggerUIBundle.SwaggerUIStandalonePreset],
+        });
+      };
+    </script>
+  </body>
+</html>

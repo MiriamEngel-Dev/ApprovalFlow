@@ -482,7 +482,11 @@ already-populated table is a no-op.
 
 ## 9. API Overview
 
-Full specification: `docs/openapi.yaml` (OpenAPI 3.0.3).
+Full specification: `docs/openapi.yaml` (OpenAPI 3.0.3). Interactive Swagger UI at
+`http://localhost:8080/api-docs/` (nginx serves `swagger-ui-dist` from a CDN as a static page,
+pointed at `/openapi.yaml`, also served statically — no new service/container) — the spec's
+`bearerAuth` scheme drives a working Authorize button, so `POST /api/auth/login` → Authorize →
+any endpoint can be exercised directly from the browser.
 
 | Domain | Endpoint | Method | Purpose |
 |---|---|---|---|
