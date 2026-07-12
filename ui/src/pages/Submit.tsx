@@ -121,7 +121,7 @@ export function Submit() {
   return (
     <div>
       <h2>Submit an invoice</h2>
-      <form onSubmit={handleSubmit} className="form-grid">
+      <form onSubmit={handleSubmit} className="form-grid-2col">
         <div className="field">
           <label>Vendor</label>
           <input value={vendor} onChange={(e) => setVendor(e.target.value)} required />
@@ -228,8 +228,11 @@ export function Submit() {
             onChange={(e) => setTaxAmount(e.target.value)}
           />
         </div>
-        <div className="card" style={{ padding: '0.75rem 1rem' }}>
-          Total: <strong>{total.toFixed(2)}</strong> {currency}
+        <div className="total-banner field-full">
+          <span>Total</span>
+          <strong>
+            {total.toFixed(2)} {currency}
+          </strong>
         </div>
         <div className="field field-check">
           <input
@@ -244,12 +247,12 @@ export function Submit() {
           <label>Date</label>
           <input type="date" value={date} onChange={(e) => setDate(e.target.value)} required />
         </div>
-        <div className="field">
+        <div className="field field-full">
           <label>Notes (optional)</label>
           <textarea value={notes} onChange={(e) => setNotes(e.target.value)} maxLength={2048} />
         </div>
-        {error && <p className="error-text">{error}</p>}
-        <button type="submit" disabled={busy}>
+        {error && <p className="error-text field-full">{error}</p>}
+        <button type="submit" disabled={busy} className="field-full">
           {busy ? 'Submitting…' : 'Submit'}
         </button>
       </form>
